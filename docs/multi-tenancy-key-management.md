@@ -275,15 +275,15 @@ These are distinct operations:
 
 | Data | Encrypted? | Under Which Key? | Stored Where? |
 |------|-----------|-----------------|---------------|
-| Response blobs | Yes (AEAD) | DEK-responses | Response Store (Zone B) |
+| Response blobs | Yes (AEAD) | DEK-responses | Response Store (Signal) |
 | Question content | Yes (AEAD) | DEK-questions | Question Registry (Mgmt) |
 | Org structure / tags | Yes (AEAD) | DEK-orgdata | Org Structure Service (Mgmt) |
-| Employee directory | Yes (AEAD) | DEK-orgdata | Identity Gateway (Zone A) |
-| Analytics cache | Yes (AEAD) | DEK-analytics | Analytics Engine (Zone B) |
-| Blind sig private key | Yes (AEAD) | DEK-blindsig | Token Issuer (Zone A) |
-| Blind sig public key | No (public) | — | Response Collector (Zone B) |
-| Spent-token ledger | Hashes only | — | Response Collector (Zone B) |
-| Token Issuer issuance logs | Yes (AEAD) | DEK-orgdata | Token Issuer (Zone A) |
+| Employee directory | Yes (AEAD) | DEK-orgdata | Identity Gateway (Identity) |
+| Analytics cache | Yes (AEAD) | DEK-analytics | Analytics Engine (Signal) |
+| Blind sig private key | Yes (AEAD) | DEK-blindsig | Token Issuer (Identity) |
+| Blind sig public key | No (public) | — | Response Collector (Signal) |
+| Spent-token ledger | Hashes only | — | Response Collector (Signal) |
+| Token Issuer issuance logs | Yes (AEAD) | DEK-orgdata | Token Issuer (Identity) |
 | Wrapped DEKs | Yes (wrapped by CMK) | CMK | Tenant Key Gateway |
 | CMK | N/A | Tenant's responsibility | Tenant's KMS (external) |
 

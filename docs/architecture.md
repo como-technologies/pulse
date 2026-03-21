@@ -17,7 +17,7 @@ This single constraint drives the entire architecture. The system is split into 
 ## 2. Trust Zones
 
 ```
-TRUST ZONE A (Identity)              TRUST ZONE B (Anonymous)
+IDENTITY ZONE                        SIGNAL ZONE
 Knows WHO people are.                Knows WHAT was answered.
 Never sees responses.                Never knows WHO answered.
 
@@ -44,11 +44,11 @@ Never sees responses.                Never knows WHO answered.
 
 **The Token Issuer and Response Collector NEVER communicate directly.** The only shared artifact is the Token Issuer's public verification key.
 
-### 2.1 Trust Zone A — Identity
+### 2.1 Identity Zone
 
 Components that know who employees are. These services handle authentication, workforce management, and sampling decisions. They never see response content.
 
-### 2.2 Trust Zone B — Anonymous
+### 2.2 Signal Zone
 
 Components that handle response data. These services validate tokens, store encrypted responses, and produce analytics. They never know who submitted a response.
 
@@ -64,11 +64,11 @@ The Tenant Key Gateway wraps all zones, providing cryptographic isolation betwee
 
 | Boundary | Between | What Crosses | What NEVER Crosses |
 |----------|---------|-------------|-------------------|
-| A → Client | Identity services → Client | Auth sessions, blinded token signatures, question content | Unblinded tokens never flow back to Zone A |
-| Client → Relay → B | Client → Anonymous services | Unblinded tokens, response blobs (via anonymizing relay) | Employee identity, auth sessions, device fingerprints, IP addresses |
-| A ↔ B (PROHIBITED) | Token Issuer ↔ Response Collector | Token Issuer's public key (published, read-only) | Everything else. No direct communication channel. |
-| Mgmt → A | Management → Identity | Workforce roster requests, campaign audience definitions | Raw response data |
-| Mgmt → B | Management → Anonymous | Question definitions (for interpreting responses), k-anon thresholds | Employee identity |
+| Identity → Client | Identity services → Client | Auth sessions, blinded token signatures, question content | Unblinded tokens never flow back to Identity |
+| Client → Relay → Signal | Client → Signal services | Unblinded tokens, response blobs (via anonymizing relay) | Employee identity, auth sessions, device fingerprints, IP addresses |
+| Identity ↔ Signal (PROHIBITED) | Token Issuer ↔ Response Collector | Token Issuer's public key (published, read-only) | Everything else. No direct communication channel. |
+| Mgmt → Identity | Management → Identity | Workforce roster requests, campaign audience definitions | Raw response data |
+| Mgmt → Signal | Management → Signal | Question definitions (for interpreting responses), k-anon thresholds | Employee identity |
 | Envelope → All | Tenant Key Gateway → Everything | Wrapped/unwrapped DEKs on demand | CMKs never stored by Pulse |
 
 ---
@@ -77,13 +77,13 @@ The Tenant Key Gateway wraps all zones, providing cryptographic isolation betwee
 
 | Component | Zone | Knows Identity? | Sees Responses? | Purpose |
 |-----------|------|----------------|-----------------|---------|
-| Identity Gateway | A | Yes | No | Authenticate employees via external IdP, manage sessions, maintain user directory |
-| Sampling Engine | A | Yes | No | Decide who gets which question, when. Enforce frequency caps, balance across segments, maintain statistical significance |
-| Token Issuer | A | Who requested (yes) | No | Issue blind-signed tokens proving "a valid employee is authorized to answer this question" |
+| Identity Gateway | Identity | Yes | No | Authenticate employees via external IdP, manage sessions, maintain user directory |
+| Sampling Engine | Identity | Yes | No | Decide who gets which question, when. Enforce frequency caps, balance across segments, maintain statistical significance |
+| Token Issuer | Identity | Who requested (yes) | No | Issue blind-signed tokens proving "a valid employee is authorized to answer this question" |
 | Anonymizing Relay | Between | No (strips it) | No (encrypted blobs) | Strip network-level identity (IP, timing, headers) from anonymous submissions |
-| Response Collector | B | No | Encrypted blobs | Accept and validate anonymous responses, manage spent-token ledger |
-| Response Store | B | No | Encrypted at rest | Persist anonymous response data under tenant DEKs |
-| Analytics Engine | B | No | Decrypted for aggregation | Produce insights, enforce k-anonymity, detect trends and anomalies |
+| Response Collector | Signal | No | Encrypted blobs | Accept and validate anonymous responses, manage spent-token ledger |
+| Response Store | Signal | No | Encrypted at rest | Persist anonymous response data under tenant DEKs |
+| Analytics Engine | Signal | No | Decrypted for aggregation | Produce insights, enforce k-anonymity, detect trends and anomalies |
 | Question Registry | Mgmt | No | No | Manage curated and custom question libraries, versioning, categorization |
 | Campaign Manager | Mgmt | Audience definitions only | No | Campaign lifecycle, scheduling, audience targeting |
 | Org Structure Service | Mgmt | Structural metadata | No | Model org hierarchy, metadata tags, k-anonymity thresholds |
@@ -122,14 +122,14 @@ Blind signatures let the Token Issuer sign a token without seeing its actual val
 
 To enable longitudinal tracking without breaking anonymity:
 
-- The client derives a **stable pseudonym** — a deterministic, one-way function of the employee's identity and a tenant-specific secret. Computed locally, never sent to Zone A.
+- The client derives a **stable pseudonym** — a deterministic, one-way function of the employee's identity and a tenant-specific secret. Computed locally, never sent to Identity.
 - The pseudonym is included in the response blob (encrypted, readable only by the Analytics Engine after DEK decryption).
 - The Analytics Engine groups responses by pseudonym to detect individual sentiment trajectories — without knowing which employee a pseudonym represents.
 - **Epoch rotation:** Pseudonyms rotate on a configurable epoch (e.g., quarterly) to limit the correlation window and reduce behavioral fingerprinting risk.
 
 **Privacy properties:**
-- Zone A never sees the pseudonym
-- Zone B sees the pseudonym but cannot reverse it to an identity
+- Identity never sees the pseudonym
+- Signal sees the pseudonym but cannot reverse it to an identity
 - Even if both zones are compromised, the pseudonym cannot be linked to an employee without the client's derivation secret
 - Epoch rotation bounds the longitudinal window
 
@@ -192,12 +192,12 @@ See [Multi-Tenancy & Key Management](multi-tenancy-key-management.md) for the fu
 
 The protocol has two strictly separated phases over separate connections and network paths:
 
-**Phase 1 — Identity-Aware (Zone A)**
+**Phase 1 — Identity-Aware (Identity)**
 - Client authenticates via SSO
 - Receives question deliveries (push or pull)
 - Requests and receives blinded token signatures
 
-**Phase 2 — Anonymous (via Relay → Zone B)**
+**Phase 2 — Anonymous (via Relay → Signal)**
 - Client submits responses with unblinded tokens
 - No authentication, no cookies, no identity information
 - Routed through the anonymizing relay
@@ -235,12 +235,12 @@ On connection, clients declare: protocol version, push/pull preference, supporte
 
 ## 9. Sampling and the Identity/Anonymity Tension
 
-The Sampling Engine (Zone A) knows **who** is assigned to each question. The Response Collector (Zone B) knows **what** was answered. Neither knows both. The client bridges the gap.
+The Sampling Engine (Identity) knows **who** is assigned to each question. The Response Collector (Signal) knows **what** was answered. Neither knows both. The client bridges the gap.
 
 ### 9.1 How the Client Bridges Trust Zones
 
 ```
-Zone A                         Client                        Zone B
+Identity                         Client                        Signal
 (identity-aware)               (trust bridge)                (anonymous)
 
 Sampling Engine:          -->  Client receives question
@@ -323,7 +323,7 @@ These properties must hold regardless of implementation choices:
 5. **The protocol is payload-agnostic** — new response types require no protocol changes
 6. **Token validity is finite and scoped** — no indefinite or universal tokens
 7. **Every response is verified (valid signature) and unique (spent-token check)**
-8. **Network-level identity is stripped by the anonymizing relay before reaching Zone B**
+8. **Network-level identity is stripped by the anonymizing relay before reaching Signal**
 9. **The system never inflates device attestation confidence**
 
 ---
@@ -332,7 +332,7 @@ These properties must hold regardless of implementation choices:
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
-| Longitudinal tracking | Stable anonymous pseudonyms with epoch rotation | Key differentiator. Pseudonyms derived client-side, never seen by Zone A. |
+| Longitudinal tracking | Stable anonymous pseudonyms with epoch rotation | Key differentiator. Pseudonyms derived client-side, never seen by Identity. |
 | IoT identity model | Device attestation spectrum with confidence levels | Devices range from personal (high) to location (low). System models what each signal means. |
 | Network anonymity | Mandatory anonymizing relay | Signals must be completely anonymous. Insider threat resistance required. |
 

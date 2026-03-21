@@ -184,7 +184,7 @@ response_blob = Encrypt(DEK, {
 This means:
 - The Response Collector sees only the encrypted blob — it cannot read the pseudonym
 - The Analytics Engine decrypts the blob using the tenant's DEK and can group by pseudonym
-- Zone A services never see the pseudonym at all (it is computed client-side and submitted via the anonymous channel)
+- Identity services never see the pseudonym at all (it is computed client-side and submitted via the anonymous channel)
 
 ### 3.4 Epoch Rotation
 
@@ -229,7 +229,7 @@ Analytics needs to aggregate responses by org segment (team, location, etc.). Bu
 
 ### 4.2 Solution: Issuance-Time Coarsening
 
-The Sampling Engine (Zone A) determines the appropriate segment granularity **at token issuance time**:
+The Sampling Engine (Identity) determines the appropriate segment granularity **at token issuance time**:
 
 1. For each employee assignment, the Sampling Engine checks: does this employee's most specific segment have >= k members? (Where k is the k-anonymity threshold.)
 2. If yes: embed the specific segment identifier in the token payload.
@@ -250,8 +250,8 @@ The system provides an audit trail without compromising anonymity:
 
 | Source | What It Records |
 |--------|----------------|
-| Token Issuer logs | "N tokens issued for batch Y. Specific employees: [X1, X2, ...]" (Zone A, identity-aware) |
-| Response Collector logs | "M responses received for batch Y with valid signatures" (Zone B, anonymous) |
+| Token Issuer logs | "N tokens issued for batch Y. Specific employees: [X1, X2, ...]" (Identity, identity-aware) |
+| Response Collector logs | "M responses received for batch Y with valid signatures" (Signal, anonymous) |
 | Reconciliation | If M <= N, the system is consistent. If M > N, something is wrong (forged tokens, ledger failure). |
 
 **What reconciliation cannot reveal:** Which specific employees responded and which didn't. Only aggregate counts can be compared. This is by design.
@@ -273,7 +273,7 @@ Even with cryptographic unlinkability, **timing** is a correlation vector: if an
 
 ## 7. Protocol Message Summary
 
-### Phase 1 — Identity-Aware Channel (Client ↔ Zone A)
+### Phase 1 — Identity-Aware Channel (Client ↔ Identity)
 
 | Direction | Message | Payload |
 |-----------|---------|---------|
@@ -284,7 +284,7 @@ Even with cryptographic unlinkability, **timing** is a correlation vector: if an
 | Server → Client | `TOKEN_RESPONSE` | signed_blinded_token, key_version |
 | Server → Client | `TOKEN_DENIED` | reason (frequency cap, not authorized, etc.) |
 
-### Phase 2 — Anonymous Channel (Client → Relay → Zone B)
+### Phase 2 — Anonymous Channel (Client → Relay → Signal)
 
 | Direction | Message | Payload |
 |-----------|---------|---------|

@@ -25,10 +25,10 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 |---------|-------------|-------------|
 | **External attacker** | No legitimate access to the system | Network interception, public endpoint probing, social engineering |
 | **Malicious employee** | Authenticated user of the system | Valid SSO credentials, ability to obtain tokens, knowledge of org structure |
-| **Compromised Zone A** | Attacker has full access to Identity zone services | Token Issuer logs, Sampling Engine data, employee roster, issuance records |
-| **Compromised Zone B** | Attacker has full access to Anonymous zone services | Response Collector data, spent-token ledger, encrypted response store, analytics results |
+| **Compromised Identity** | Attacker has full access to Identity zone services | Token Issuer logs, Sampling Engine data, employee roster, issuance records |
+| **Compromised Signal** | Attacker has full access to Signal zone services | Response Collector data, spent-token ledger, encrypted response store, analytics results |
 | **Compromised Relay** | Attacker controls the anonymizing relay | Network traffic through the relay (encrypted payloads, source IPs, timing) |
-| **Compromised Zones A+B** | Attacker has access to both trust zones | Everything from both zones simultaneously |
+| **Compromised Identity+Signal** | Attacker has access to both trust zones | Everything from both zones simultaneously |
 | **Platform operator (insider)** | Legitimate system administrator | Infrastructure access, deployment access, log access. Does NOT have tenant CMKs. |
 | **Compromised tenant admin** | Org admin with malicious intent | Campaign creation, question management, org structure changes, analytics access |
 
@@ -42,7 +42,7 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 
 | | |
 |---|---|
-| **Attacker** | Compromised Zones A+B |
+| **Attacker** | Compromised Identity+Signal |
 | **Attack** | Correlate Token Issuer logs (employee → blinded token) with Response Collector records (unblinded token → response) to link identities to responses |
 | **Mitigation** | Blind signatures make this mathematically impossible. The blinding factor `r` exists only in the client's memory and is discarded after unblinding. Without `r`, the correlation cannot be computed. This property holds even against an adversary with unlimited computational power (information-theoretic security for RSA blind signatures). |
 | **Residual risk** | None (assuming correct implementation of the blind signature scheme) |
@@ -51,8 +51,8 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 
 | | |
 |---|---|
-| **Attacker** | Compromised Zones A+B, or compromised relay + Zone A |
-| **Attack** | Correlate the timestamp of token issuance (Zone A logs) with the timestamp of response submission (Zone B or relay logs) to link identity to response |
+| **Attacker** | Compromised Identity+Signal, or compromised relay + Identity |
+| **Attack** | Correlate the timestamp of token issuance (Identity logs) with the timestamp of response submission (Signal or relay logs) to link identity to response |
 | **Mitigation** | (1) Client-side random delay between token acquisition and submission. (2) Anonymizing relay batches and shuffles responses before forwarding. (3) Store-and-forward clients introduce natural variable delays. (4) Token acquisition and response submission use separate network connections and endpoints. |
 | **Residual risk** | Low. An attacker with access to both zone logs and precise timing could attempt statistical correlation if many users are active simultaneously. Batching/shuffling at the relay significantly reduces this. Risk increases for very small orgs with few active users at any given time. |
 
@@ -63,13 +63,13 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 | **Attacker** | Compromised relay, or network-level observer |
 | **Attack** | Correlate source IP of Phase 1 (token acquisition) with source IP of Phase 2 (response submission) |
 | **Mitigation** | (1) The anonymizing relay strips source IP before forwarding to the Response Collector. (2) Phase 1 and Phase 2 use separate endpoints and connections. (3) The relay does not log source IPs. |
-| **Residual risk** | A compromised relay operator can see source IPs on the incoming side, but cannot read response content (encrypted). If the relay operator also has Zone A access, they could correlate IPs to identities for timing windows. Mitigation: the relay is operated as a minimal, auditable component with strict access controls. Defense in depth: clients could optionally use VPN/Tor for Phase 2. |
+| **Residual risk** | A compromised relay operator can see source IPs on the incoming side, but cannot read response content (encrypted). If the relay operator also has Identity access, they could correlate IPs to identities for timing windows. Mitigation: the relay is operated as a minimal, auditable component with strict access controls. Defense in depth: clients could optionally use VPN/Tor for Phase 2. |
 
 #### T4: Behavioral Fingerprinting via Pseudonym
 
 | | |
 |---|---|
-| **Attacker** | Compromised Zone B or compromised tenant admin |
+| **Attacker** | Compromised Signal or compromised tenant admin |
 | **Attack** | Use patterns in an anonymous pseudonym's responses over time (response timing, sentiment patterns, writing style in free-text) to infer identity |
 | **Mitigation** | (1) Pseudonym epoch rotation limits the correlation window. (2) K-anonymity enforcement prevents small-group isolation. (3) Free-text responses carry inherent fingerprinting risk — tenants should be advised of this when enabling free-text response types. |
 | **Residual risk** | Medium for free-text responses. Low for structured response types (scale, emoji). Epoch rotation is the primary control. |
@@ -197,7 +197,7 @@ Each threat is assessed against a set of attacker profiles with varying capabili
                     T6: Org manipulation
                           |
                           v
-+========================[Zone A]========================+
++========================[Identity]========================+
 |                                                         |
 |  Identity Gateway  --  Sampling Engine  --  Token Issuer|
 |       |                                        |        |
@@ -224,7 +224,7 @@ Each threat is assessed against a set of attacker profiles with varying capabili
                     +-------------+                   |
                               |                      |
                               v                      v
-+========================[Zone B]========================+
++========================[Signal]========================+
 |                                                         |
 |  Response Collector  --  Response Store  --  Analytics  |
 |       |                       |                  |      |
