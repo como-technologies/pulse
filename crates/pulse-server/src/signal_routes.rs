@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
-use pulse_core::signal::ResponseStore;
+use pulse_signal::ResponseStore;
 use pulse_protocol::messages::ResponseSubmit;
 
 use crate::AppState;

@@ -1392,21 +1392,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pulse-core"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "pulse-crypto",
- "pulse-protocol",
- "rand 0.9.2",
- "sha2",
- "thiserror",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "pulse-crypto"
 version = "0.1.0"
 dependencies = [
@@ -1420,6 +1405,16 @@ dependencies = [
  "serde",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "pulse-identity"
+version = "0.1.0"
+dependencies = [
+ "pulse-crypto",
+ "pulse-protocol",
+ "thiserror",
+ "uuid",
 ]
 
 [[package]]
@@ -1439,9 +1434,10 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
- "pulse-core",
  "pulse-crypto",
+ "pulse-identity",
  "pulse-protocol",
+ "pulse-signal",
  "rand 0.9.2",
  "reqwest",
  "serde",
@@ -1450,6 +1446,18 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "pulse-signal"
+version = "0.1.0"
+dependencies = [
+ "pulse-crypto",
+ "pulse-protocol",
+ "sha2",
+ "thiserror",
+ "tracing",
  "uuid",
 ]
 

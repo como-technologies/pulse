@@ -6,8 +6,8 @@ use pulse_crypto::{MessageRandomizer, Signature};
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::token::TokenPayload;
 
-use super::ledger::{SpendResult, SpentTokenLedger, TokenHash};
-use super::store::{ResponseStore, StoredResponse};
+use crate::ledger::{SpendResult, SpentTokenLedger, TokenHash};
+use crate::store::{ResponseStore, StoredResponse};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CollectorError {

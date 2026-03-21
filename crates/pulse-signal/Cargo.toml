@@ -1,0 +1,12 @@
+[package]
+name = "pulse-signal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+pulse-crypto = { path = "../pulse-crypto" }
+pulse-protocol = { path = "../pulse-protocol" }
+thiserror.workspace = true
+tracing.workspace = true
+sha2.workspace = true
+uuid.workspace = true

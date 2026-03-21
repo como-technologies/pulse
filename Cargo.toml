@@ -2,7 +2,8 @@
 members = [
     "crates/pulse-crypto",
     "crates/pulse-protocol",
-    "crates/pulse-core",
+    "crates/pulse-identity",
+    "crates/pulse-signal",
     "crates/pulse-server",
 ]
 resolver = "2"

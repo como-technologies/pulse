@@ -6,7 +6,8 @@ edition.workspace = true
 [dependencies]
 pulse-crypto = { path = "../pulse-crypto" }
 pulse-protocol = { path = "../pulse-protocol" }
-pulse-core = { path = "../pulse-core" }
+pulse-identity = { path = "../pulse-identity" }
+pulse-signal = { path = "../pulse-signal" }
 axum.workspace = true
 tokio.workspace = true
 tower.workspace = true

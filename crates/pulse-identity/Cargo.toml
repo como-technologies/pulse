@@ -1,5 +1,5 @@
 [package]
-name = "pulse-core"
+name = "pulse-identity"
 version.workspace = true
 edition.workspace = true
 
@@ -7,11 +7,4 @@ edition.workspace = true
 pulse-crypto = { path = "../pulse-crypto" }
 pulse-protocol = { path = "../pulse-protocol" }
 thiserror.workspace = true
-tracing.workspace = true
-sha2.workspace = true
 uuid.workspace = true
-
-[dev-dependencies]
-proptest.workspace = true
-tokio = { workspace = true, features = ["rt", "macros"] }
-rand.workspace = true

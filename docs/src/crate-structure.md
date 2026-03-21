@@ -1,12 +1,13 @@
 # Crate Structure
 
-Pulse is a Cargo workspace with four crates, layered by responsibility.
+Pulse is a Cargo workspace with five crates, layered by responsibility.
 
 ```
 crates/
   pulse-crypto/      Cryptographic primitives
   pulse-protocol/    Wire types and message definitions
-  pulse-core/        Domain logic (Identity and Signal zones)
+  pulse-identity/    Identity zone domain logic
+  pulse-signal/      Signal zone domain logic
   pulse-server/      HTTP layer (Axum)
 ```
 
@@ -18,24 +19,32 @@ Low-level cryptographic operations. Blind signatures (RSA, per RFC 9474), AES-25
 
 Shared wire types: `TokenPayload`, Phase 1 and Phase 2 message types. Serde-serializable. Defines the contract between client and server without coupling to either side.
 
-## pulse-core
+## pulse-identity
 
-Domain logic, split into two modules that mirror the trust zone separation:
+Identity zone domain logic. `TokenIssuer`: blind signature issuance, token validation, frequency bookkeeping.
 
-- **`identity`** -- `TokenIssuer`: blind signature issuance, token validation, frequency bookkeeping
-- **`signal`** -- `ResponseCollector`: signature verification, spent-token ledger, response storage
+## pulse-signal
 
-Hexagonal architecture: domain traits (`SpentTokenLedger`, `ResponseStore`) with in-memory implementations for testing. No cross-imports between `identity` and `signal` modules.
+Signal zone domain logic. `ResponseCollector`: signature verification, spent-token ledger, response storage.
+
+Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `Arc<dyn ResponseStore>`), not concrete storage -- swap the adapter without touching domain code.
+
+## Trust zone isolation
+
+`pulse-identity` and `pulse-signal` are separate crates with no dependency on each other. The Cargo dependency graph makes cross-zone imports a compile error -- the [trust zone boundary](architecture.md) is enforced by the compiler, not by convention.
 
 ## pulse-server
 
-Axum HTTP server exposing the Identity zone (port 8001) and Signal zone (port 8002) on separate listeners. Thin adapter layer -- delegates all logic to `pulse-core`.
+Axum HTTP server exposing the Identity zone (port 8001) and Signal zone (port 8002) on separate listeners. Thin adapter layer -- delegates all logic to `pulse-identity` and `pulse-signal`.
 
 ## Dependency Graph
 
 ```
 pulse-server
-  -> pulse-core
+  -> pulse-identity
+  |    -> pulse-protocol
+  |    -> pulse-crypto
+  -> pulse-signal
        -> pulse-protocol
        -> pulse-crypto
 ```

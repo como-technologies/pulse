@@ -14,8 +14,8 @@
 
 use std::sync::Arc;
 
-use pulse_core::identity::TokenIssuer;
-use pulse_core::signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
+use pulse_identity::TokenIssuer;
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
 use pulse_crypto::aead;
 use pulse_crypto::blind_sig;
 use pulse_protocol::messages::{ResponseSubmit, TokenRequest};

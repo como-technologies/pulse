@@ -7,8 +7,8 @@ use axum::{
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
-use pulse_core::identity::TokenIssuer;
-use pulse_core::signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
+use pulse_identity::TokenIssuer;
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use pulse_crypto::blind_sig;
 
 mod identity_routes;

@@ -11,8 +11,8 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
-use pulse_core::identity::TokenIssuer;
-use pulse_core::signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
+use pulse_identity::TokenIssuer;
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use pulse_crypto::{aead, blind_sig};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 
@@ -27,7 +27,7 @@ struct TestAppState {
 // Route handler wrappers that reference TestAppState
 mod handlers {
     use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-    use pulse_core::signal::ResponseStore;
+    use pulse_signal::ResponseStore;
     use pulse_protocol::messages::{QuestionDelivery, ResponseSubmit, ResponseType, TokenRequest};
     use serde::Deserialize;
     use std::sync::Arc;
