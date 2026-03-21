@@ -1,0 +1,9 @@
+[book]
+title = "Pulse Documentation"
+authors = ["Como Technologies"]
+language = "en"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/como-technologies/pulse"
+edit-url-template = "https://github.com/como-technologies/pulse/edit/main/docs/src/{path}"
