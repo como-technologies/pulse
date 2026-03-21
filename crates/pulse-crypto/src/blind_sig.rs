@@ -34,7 +34,8 @@ pub fn generate_keypair() -> Result<BrssKeyPair, BlindSigError> {
 /// Client: blind a message for signing by the Token Issuer.
 /// Returns the blinding result containing the blinded message and the secret blinding factor.
 pub fn blind(pk: &BrssPublicKey, msg: &[u8]) -> Result<BlindingResult, BlindSigError> {
-    pk.blind(&mut DefaultRng, msg).map_err(BlindSigError::Blinding)
+    pk.blind(&mut DefaultRng, msg)
+        .map_err(BlindSigError::Blinding)
 }
 
 /// Token Issuer: sign a blinded message without seeing the original content.
@@ -42,7 +43,8 @@ pub fn blind_sign(
     sk: &BrssSecretKey,
     blinded_msg: &blind_rsa_signatures::BlindMessage,
 ) -> Result<BlindSignature, BlindSigError> {
-    sk.blind_sign(blinded_msg).map_err(BlindSigError::BlindSigning)
+    sk.blind_sign(blinded_msg)
+        .map_err(BlindSigError::BlindSigning)
 }
 
 /// Client: unblind the signature and verify it against the public key.

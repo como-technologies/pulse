@@ -50,9 +50,6 @@ impl ResponseStore for InMemoryStore {
     }
 
     fn list(&self) -> Vec<StoredResponse> {
-        self.responses
-            .lock()
-            .expect("store lock poisoned")
-            .clone()
+        self.responses.lock().expect("store lock poisoned").clone()
     }
 }

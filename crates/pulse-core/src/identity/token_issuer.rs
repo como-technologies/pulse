@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
-use pulse_crypto::blind_sig::{self, BrssSecretKey};
 use pulse_crypto::BlindMessage;
+use pulse_crypto::blind_sig::{self, BrssSecretKey};
 use pulse_protocol::messages::{TokenDeniedReason, TokenRequest, TokenResponse};
 
 /// Record of a token issuance — stored in the Identity zone.

@@ -1,11 +1,6 @@
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,7 +24,11 @@ pub struct AuthResponse {
 /// Stub auth — accepts any non-empty API key, returns a fake session.
 pub async fn auth(Json(req): Json<AuthRequest>) -> impl IntoResponse {
     if req.api_key.is_empty() {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "missing api_key"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "missing api_key"})),
+        )
+            .into_response();
     }
     // In Slice 0, the API key IS the employee ID for simplicity
     let resp = AuthResponse {

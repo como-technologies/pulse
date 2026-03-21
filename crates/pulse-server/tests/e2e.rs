@@ -3,7 +3,10 @@
 
 use std::sync::Arc;
 
-use axum::{Router, routing::{get, post}};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use serde_json::Value;
 use tokio::net::TcpListener;
 use uuid::Uuid;
@@ -23,12 +26,12 @@ struct TestAppState {
 
 // Route handler wrappers that reference TestAppState
 mod handlers {
-    use std::sync::Arc;
     use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-    use serde::Deserialize;
-    use uuid::Uuid;
     use pulse_core::signal::ResponseStore;
-    use pulse_protocol::messages::{QuestionDelivery, ResponseType, ResponseSubmit, TokenRequest};
+    use pulse_protocol::messages::{QuestionDelivery, ResponseSubmit, ResponseType, TokenRequest};
+    use serde::Deserialize;
+    use std::sync::Arc;
+    use uuid::Uuid;
 
     use super::TestAppState;
 
@@ -63,11 +66,13 @@ mod handlers {
                     "blind_signature": resp.blind_signature,
                     "key_version": resp.key_version,
                 })),
-            ).into_response(),
+            )
+                .into_response(),
             Err(e) => (
                 StatusCode::BAD_REQUEST,
                 Json(serde_json::json!({"error": e.to_string()})),
-            ).into_response(),
+            )
+                .into_response(),
         }
     }
 
@@ -76,8 +81,16 @@ mod handlers {
         Json(submit): Json<ResponseSubmit>,
     ) -> impl IntoResponse {
         match state.collector.accept(&submit) {
-            Ok(()) => (StatusCode::OK, Json(serde_json::json!({"status": "accepted"}))).into_response(),
-            Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()}))).into_response(),
+            Ok(()) => (
+                StatusCode::OK,
+                Json(serde_json::json!({"status": "accepted"})),
+            )
+                .into_response(),
+            Err(e) => (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            )
+                .into_response(),
         }
     }
 

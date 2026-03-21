@@ -20,7 +20,9 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, AeadError> {
     let cipher = Aes256Gcm::new(key);
     let nonce_bytes: [u8; 12] = rand::random();
     let nonce = Nonce::from_slice(&nonce_bytes);
-    let ciphertext = cipher.encrypt(nonce, plaintext).map_err(|_| AeadError::Encryption)?;
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|_| AeadError::Encryption)?;
 
     let mut output = Vec::with_capacity(12 + ciphertext.len());
     output.extend_from_slice(&nonce_bytes);
