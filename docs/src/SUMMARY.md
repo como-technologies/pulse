@@ -1,13 +1,22 @@
 # Summary
 
-[Capabilities and Goals](pulse-capabilities.md)
+[Introduction](introduction.md)
 
----
+# Concepts
+
+- [Vision & Principles](vision.md)
+- [Verified Anonymity](verified-anonymity.md)
+- [Sampling & Statistics](sampling.md)
+- [Multi-Tenancy](multi-tenancy.md)
 
 # Design
 
 - [System Architecture](architecture.md)
 - [Anonymity Protocol](anonymity-protocol.md)
 - [Device Attestation](device-attestation.md)
-- [Multi-Tenancy & Key Management](multi-tenancy-key-management.md)
+- [Key Management](key-management.md)
 - [Threat Model](threat-model.md)
+
+# Development
+
+- [Crate Structure](crate-structure.md)

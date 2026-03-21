@@ -2,7 +2,7 @@
 
 *Living document. Technology-agnostic. Describes the high-level architecture of the Pulse platform.*
 
-*Companion documents: [Anonymity Protocol](anonymity-protocol.md) | [Device Attestation](device-attestation.md) | [Threat Model](threat-model.md) | [Multi-Tenancy & Key Management](multi-tenancy-key-management.md)*
+*Companion documents: [Anonymity Protocol](anonymity-protocol.md) | [Device Attestation](device-attestation.md) | [Threat Model](threat-model.md) | [Key Management](key-management.md)*
 
 ---
 
@@ -167,7 +167,7 @@ All anonymous submissions (Phase 2 of the protocol) are routed through a mandato
 
 ## 7. Multi-Tenancy and Customer-Managed Keys
 
-See [Multi-Tenancy & Key Management](multi-tenancy-key-management.md) for the full specification.
+See [Key Management](key-management.md) for the full specification.
 
 ### Summary
 
