@@ -50,7 +50,7 @@ fn sqlite_ledger_tracks_distinct_hashes() {
 fn make_response(blob: &[u8]) -> StoredResponse {
     StoredResponse {
         encrypted_blob: EncryptedBlob(blob.to_vec()),
-        question_batch_id: QuestionBatchId::from_uuid(uuid::Uuid::new_v4()),
+        question_batch_id: QuestionBatchId::new(),
         received_at: UnixTimestamp(1_700_000_000),
     }
 }
@@ -112,7 +112,7 @@ fn sqlite_ledger_survives_reopen() {
 fn sqlite_store_survives_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let db_path = dir.path().join("test.db");
-    let batch_id = QuestionBatchId::from_uuid(uuid::Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
 
     {
         let store = SqliteStore::open(&db_path).unwrap();

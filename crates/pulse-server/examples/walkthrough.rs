@@ -18,7 +18,6 @@ use pulse_protocol::{
     UnixTimestamp,
 };
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
-use uuid::Uuid;
 
 /// Show first and last 4 bytes of a byte slice as hex.
 fn hex_preview(bytes: &[u8]) -> String {
@@ -72,8 +71,8 @@ fn main() {
     println!("Created Signal zone (ResponseCollector + InMemoryLedger + InMemoryStore)");
     println!();
 
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
     println!("  Batch ID:  {batch_id}");
     println!("  Tenant ID: {tenant_id}");

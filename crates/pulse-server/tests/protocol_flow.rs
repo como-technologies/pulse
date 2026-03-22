@@ -24,7 +24,6 @@ use pulse_protocol::{
     UnixTimestamp,
 };
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
-use uuid::Uuid;
 
 fn setup() -> (
     TokenIssuer,
@@ -56,8 +55,8 @@ fn make_token(batch_id: QuestionBatchId, tenant_id: TenantId) -> TokenPayload {
 #[test]
 fn full_protocol_flow() {
     let (issuer, collector, store, pk) = setup();
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     // ── Step 1-2: Client creates token payload ──
@@ -128,8 +127,8 @@ fn full_protocol_flow() {
 #[test]
 fn duplicate_submission_rejected() {
     let (issuer, collector, _, pk) = setup();
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     let token = make_token(batch_id, tenant_id);
@@ -165,8 +164,8 @@ fn duplicate_submission_rejected() {
 #[test]
 fn forged_signature_rejected() {
     let (_, collector, _, _) = setup();
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
     let token_bytes = token.to_bytes();
@@ -188,9 +187,9 @@ fn forged_signature_rejected() {
 #[test]
 fn wrong_batch_id_rejected() {
     let (issuer, collector, _, pk) = setup();
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let wrong_batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let wrong_batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
     let token_bytes = token.to_bytes();
@@ -223,9 +222,9 @@ fn wrong_batch_id_rejected() {
 #[test]
 fn wrong_tenant_id_rejected() {
     let (issuer, collector, _, pk) = setup();
-    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
-    let wrong_tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let batch_id = QuestionBatchId::new();
+    let tenant_id = TenantId::new();
+    let wrong_tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
     let token_bytes = token.to_bytes();

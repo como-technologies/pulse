@@ -9,22 +9,20 @@ use axum::{
 };
 use serde_json::Value;
 use tokio::net::TcpListener;
-use uuid::Uuid;
 
 use pulse_crypto::{aead, blind_sig};
 use pulse_identity::TokenIssuer;
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
-
 use pulse_server::{AppState, identity_routes, signal_routes};
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 async fn start_test_servers() -> (String, String, Arc<AppState>) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
-    let question_batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
+    let question_batch_id = QuestionBatchId::new();
 
     let state = Arc::new(AppState {
         issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
@@ -65,7 +63,7 @@ async fn full_http_flow() {
     let (identity_url, signal_url, state) = start_test_servers().await;
     let client = reqwest::Client::new();
     let batch_id = state.question_batch_id;
-    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
+    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     // 1. Get question from Identity zone
