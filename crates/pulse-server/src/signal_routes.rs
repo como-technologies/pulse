@@ -3,11 +3,12 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
-use pulse_protocol::messages::ResponseSubmit;
+use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::{QuestionBatchId, UnixTimestamp};
-use pulse_signal::ResponseStore;
+use pulse_signal::{CollectorError, ResponseStore};
 
 use crate::AppState;
+use crate::error::ApiError;
 
 /// Accept an anonymous response submission — NO authentication required.
 pub async fn submit_response(
@@ -20,11 +21,7 @@ pub async fn submit_response(
             Json(serde_json::json!({"status": "accepted"})),
         )
             .into_response(),
-        Err(e) => (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": e.to_string()})),
-        )
-            .into_response(),
+        Err(e) => map_collector_error(e).into_response(),
     }
 }
 
@@ -55,4 +52,34 @@ pub async fn debug_responses(State(state): State<Arc<AppState>>) -> impl IntoRes
             })
             .collect(),
     })
+}
+
+fn map_collector_error(e: CollectorError) -> ApiError {
+    match e {
+        CollectorError::Rejected(reason) => {
+            let (code, message) = match reason {
+                RejectReason::InvalidSignature => (
+                    "RESPONSE_INVALID_SIGNATURE",
+                    "blind signature verification failed",
+                ),
+                RejectReason::TokenExpired => ("RESPONSE_TOKEN_EXPIRED", "token has expired"),
+                RejectReason::TokenAlreadySpent => (
+                    "RESPONSE_TOKEN_ALREADY_SPENT",
+                    "token has already been used",
+                ),
+                RejectReason::BatchMismatch => (
+                    "RESPONSE_BATCH_MISMATCH",
+                    "question batch ID does not match token",
+                ),
+                RejectReason::TenantMismatch => {
+                    ("RESPONSE_TENANT_MISMATCH", "tenant ID does not match token")
+                }
+                RejectReason::Malformed => ("RESPONSE_MALFORMED", "token payload is malformed"),
+            };
+            ApiError::ResponseRejected {
+                code,
+                message: message.to_string(),
+            }
+        }
+    }
 }

@@ -22,7 +22,7 @@ No running server required. Read the output to build intuition about how the pro
 
 ## Test suite
 
-25 tests across 4 crates. Run all:
+40 tests across 4 crates. Run all:
 
 ```sh
 cargo test
@@ -32,9 +32,10 @@ cargo test
 
 ```sh
 cargo test -p pulse-crypto      # 11 tests — blind sigs + AEAD
-cargo test -p pulse-protocol    #  5 tests — wire types + token
-cargo test -p pulse-signal      #  3 tests — spent-token ledger
-cargo test -p pulse-server      #  6 tests — protocol flow + HTTP e2e
+cargo test -p pulse-protocol    #  9 tests — wire types + token + sensitive redaction
+cargo test -p pulse-identity    #  3 tests — EmployeeId redaction
+cargo test -p pulse-signal      #  6 tests — spent-token ledger + tracing assertions
+cargo test -p pulse-server      # 11 tests — protocol flow + HTTP e2e + error responses
 ```
 
 ### By name
@@ -52,6 +53,7 @@ cargo test -- --nocapture               # show println output
 ```sh
 cargo test --test protocol_flow    # in-memory protocol flow (5 tests)
 cargo test --test e2e              # HTTP round-trip (1 test)
+cargo test --test error_responses  # structured error responses (5 tests)
 ```
 
 ## What each layer proves
@@ -78,7 +80,19 @@ cargo test --test e2e              # HTTP round-trip (1 test)
 
 ### End-to-end test (e2e.rs)
 
-**HTTP round-trip** — Full flow over HTTP with separate Identity and Signal zone routers on random ports. Exercises serialization, routing, and status codes. Duplicate submission returns HTTP 400.
+**HTTP round-trip** — Full flow over HTTP with separate Identity and Signal zone routers on random ports. Exercises serialization, routing, and status codes. Duplicate submission returns HTTP 422 with structured error code.
+
+### Error response tests (error_responses.rs)
+
+**Structured error format** — All error responses follow the `{ "code": "...", "message": "..." }` shape with exactly two fields.
+
+**HTTP status codes** — Duplicate token → 422, forged signature → 422, batch mismatch → 422, empty API key → 401.
+
+**Machine-readable codes** — Error codes like `RESPONSE_TOKEN_ALREADY_SPENT`, `RESPONSE_INVALID_SIGNATURE`, `UNAUTHORIZED` are stable and suitable for programmatic consumption.
+
+### Tracing tests (response_collector)
+
+**Observability verification** — Successful response acceptance logs "response accepted". Forged signatures do not log success. Debug-level validation steps are emitted for each stage of the pipeline.
 
 ## Key properties verified
 
@@ -98,3 +112,6 @@ cargo test --test e2e              # HTTP round-trip (1 test)
 | Replay prevention | `duplicate_submission_rejected` |
 | Forged signature rejection | `forged_signature_rejected` |
 | Batch/tenant mismatch | `wrong_batch_id_rejected`, `wrong_tenant_id_rejected` |
+| Structured error responses | `duplicate_submission_returns_422_with_error_code`, `forged_signature_returns_422`, `batch_mismatch_returns_422`, `empty_api_key_returns_401`, `error_response_has_consistent_structure` |
+| Tracing observability | `accept_logs_success`, `duplicate_submission_does_not_log_success`, `forged_signature_logs_no_success` |
+| Sensitive type redaction | `sensitive_types_redact_debug`, `sensitive_types_redact_display`, `sensitive_types_still_serialize_to_real_values`, `safe_types_show_real_values_in_debug`, `employee_id_redacts_debug_and_display`, `employee_id_inner_value_accessible_via_field`, `employee_id_equality_works_despite_redacted_debug` |

@@ -15,12 +15,14 @@ serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+tower-http.workspace = true
 anyhow.workspace = true
 base64.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 reqwest = { version = "0.12.28", features = ["json"] }
+tracing-test.workspace = true
 rand.workspace = true
 uuid.workspace = true
 hex.workspace = true

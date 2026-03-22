@@ -1,5 +1,5 @@
 //! End-to-end HTTP test exercising the full anonymous response flow
-//! across both Identity (port 8001) and Signal (port 8002) zones.
+//! across both Identity and Signal zones using the real route handlers.
 
 use std::sync::Arc;
 
@@ -17,102 +17,16 @@ use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
-// Replicate AppState here since it's in main.rs (binary crate)
-struct TestAppState {
-    issuer: TokenIssuer,
-    collector: ResponseCollector,
-    store: Arc<InMemoryStore>,
-    question_batch_id: QuestionBatchId,
-}
+use pulse_server::{AppState, identity_routes, signal_routes};
 
-// Route handler wrappers that reference TestAppState
-mod handlers {
-    use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-    use pulse_identity::EmployeeId;
-    use pulse_protocol::messages::{QuestionDelivery, ResponseSubmit, ResponseType, TokenRequest};
-    use pulse_protocol::{BlindedToken, QuestionBatchId, QuestionText, UnixTimestamp};
-    use pulse_signal::ResponseStore;
-    use serde::Deserialize;
-    use std::sync::Arc;
-
-    use super::TestAppState;
-
-    #[derive(Deserialize)]
-    pub struct SignRequest {
-        pub employee_id: String,
-        pub blinded_token: BlindedToken,
-        pub question_batch_id: QuestionBatchId,
-    }
-
-    pub async fn get_question(State(state): State<Arc<TestAppState>>) -> Json<QuestionDelivery> {
-        Json(QuestionDelivery {
-            question_batch_id: state.question_batch_id,
-            question_text: QuestionText::from("How are you feeling about work today?"),
-            response_type: ResponseType::Scale5,
-            expiry: UnixTimestamp(u64::MAX),
-        })
-    }
-
-    pub async fn sign_token(
-        State(state): State<Arc<TestAppState>>,
-        Json(req): Json<SignRequest>,
-    ) -> impl IntoResponse {
-        let token_request = TokenRequest {
-            blinded_token: req.blinded_token,
-            question_batch_id: req.question_batch_id,
-        };
-        let employee_id = EmployeeId(req.employee_id);
-        match state.issuer.sign_token(&employee_id, &token_request) {
-            Ok(resp) => (
-                StatusCode::OK,
-                Json(serde_json::json!({
-                    "blind_signature": resp.blind_signature,
-                    "key_version": resp.key_version,
-                })),
-            )
-                .into_response(),
-            Err(e) => (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response(),
-        }
-    }
-
-    pub async fn submit_response(
-        State(state): State<Arc<TestAppState>>,
-        Json(submit): Json<ResponseSubmit>,
-    ) -> impl IntoResponse {
-        match state.collector.accept(&submit) {
-            Ok(()) => (
-                StatusCode::OK,
-                Json(serde_json::json!({"status": "accepted"})),
-            )
-                .into_response(),
-            Err(e) => (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": e.to_string()})),
-            )
-                .into_response(),
-        }
-    }
-
-    pub async fn debug_responses(State(state): State<Arc<TestAppState>>) -> impl IntoResponse {
-        let stored = state.store.list();
-        Json(serde_json::json!({
-            "count": stored.len(),
-        }))
-    }
-}
-
-async fn start_test_servers() -> (String, String, Arc<TestAppState>) {
+async fn start_test_servers() -> (String, String, Arc<AppState>) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store = Arc::new(InMemoryStore::new());
     let question_batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
 
-    let state = Arc::new(TestAppState {
+    let state = Arc::new(AppState {
         issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
@@ -120,13 +34,13 @@ async fn start_test_servers() -> (String, String, Arc<TestAppState>) {
     });
 
     let identity_router = Router::new()
-        .route("/question", get(handlers::get_question))
-        .route("/token/sign", post(handlers::sign_token))
+        .route("/question", get(identity_routes::get_question))
+        .route("/token/sign", post(identity_routes::sign_token))
         .with_state(state.clone());
 
     let signal_router = Router::new()
-        .route("/response", post(handlers::submit_response))
-        .route("/debug/responses", get(handlers::debug_responses))
+        .route("/response", post(signal_routes::submit_response))
+        .route("/debug/responses", get(signal_routes::debug_responses))
         .with_state(state.clone());
 
     // Bind to port 0 for random available ports
@@ -240,7 +154,7 @@ async fn full_http_flow() {
         .unwrap();
     assert_eq!(debug["count"], 1);
 
-    // 8. Duplicate submission should fail
+    // 8. Duplicate submission should fail with 422 and structured error
     let dup_resp = client
         .post(format!("{signal_url}/response"))
         .json(&serde_json::json!({
@@ -255,5 +169,7 @@ async fn full_http_flow() {
         .send()
         .await
         .unwrap();
-    assert_eq!(dup_resp.status(), 400);
+    assert_eq!(dup_resp.status(), 422);
+    let dup_body: Value = dup_resp.json().await.unwrap();
+    assert_eq!(dup_body["code"], "RESPONSE_TOKEN_ALREADY_SPENT");
 }

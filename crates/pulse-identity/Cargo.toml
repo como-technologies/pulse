@@ -8,4 +8,5 @@ pulse-crypto = { path = "../pulse-crypto" }
 pulse-protocol = { path = "../pulse-protocol" }
 serde.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 uuid.workspace = true
