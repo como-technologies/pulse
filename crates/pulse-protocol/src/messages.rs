@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BlindSig, BlindedToken, EncryptedBlob, KeyVersion, QuestionBatchId, QuestionText,
+    BlindSig, BlindedToken, EncryptedBlob, KeyVersion, QuestionBatchId, QuestionText, SegmentLabel,
     SignatureBytes, TenantId, TokenBytes, UnixTimestamp,
 };
 
@@ -46,6 +46,9 @@ pub struct QuestionDelivery {
     pub response_type: ResponseType,
     /// Unix timestamp when this batch expires.
     pub expiry: UnixTimestamp,
+    /// Coarsened org segment identifiers for k-anonymity.
+    /// The client embeds these in [`TokenPayload::segment_vector`] before blinding.
+    pub segment_vector: Vec<SegmentLabel>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

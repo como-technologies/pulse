@@ -11,37 +11,46 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 
 use pulse_crypto::{aead, blind_sig};
-use pulse_identity::{InMemorySessionStore, TokenIssuer};
+use pulse_identity::{InMemorySessionStore, QuestionBatch, SamplingEngine, TokenIssuer};
+use pulse_protocol::messages::ResponseType;
 use pulse_protocol::token::{AttestationClass, TokenPayload};
-use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
+use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, QuestionText, TenantId, UnixTimestamp};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 use pulse_server::dev_auth::DevAuthenticator;
+use pulse_server::dev_sampling::DevSamplingEngine;
 use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
-async fn start_test_servers() -> (String, String, Arc<IdentityState>) {
+async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBatchId) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
-    let question_batch_id = QuestionBatchId::new();
+
+    let batch_id = QuestionBatchId::new();
+    let batch = QuestionBatch {
+        id: batch_id,
+        question_text: QuestionText::from("test question"),
+        response_type: ResponseType::Scale5,
+        expiry: UnixTimestamp(u64::MAX),
+    };
+    let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(DevSamplingEngine::new(batch, 1));
 
     let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
+        issuer: TokenIssuer::with_sampling(kp.sk, KeyVersion(1), sampling_engine.clone()),
         authenticator: Arc::new(DevAuthenticator),
         session_store: Arc::new(InMemorySessionStore::new()),
-        question_batch_id,
+        sampling_engine,
     });
 
     let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
-        question_batch_id,
     });
 
     let identity_router = Router::new()
         .route("/auth", post(identity_routes::auth))
-        .route("/question", get(identity_routes::get_question))
+        .route("/question", get(identity_routes::get_questions))
         .route("/token/sign", post(identity_routes::sign_token))
         .with_state(identity_state.clone());
 
@@ -63,6 +72,7 @@ async fn start_test_servers() -> (String, String, Arc<IdentityState>) {
         format!("http://{identity_addr}"),
         format!("http://{signal_addr}"),
         identity_state,
+        batch_id,
     )
 }
 
@@ -136,9 +146,8 @@ async fn sign_token_flow(
 
 #[tokio::test]
 async fn duplicate_submission_returns_422_with_error_code() {
-    let (identity_url, signal_url, state) = start_test_servers().await;
+    let (identity_url, signal_url, state, batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let batch_id = state.question_batch_id;
     let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
@@ -179,9 +188,8 @@ async fn duplicate_submission_returns_422_with_error_code() {
 
 #[tokio::test]
 async fn forged_signature_returns_422() {
-    let (_identity_url, signal_url, state) = start_test_servers().await;
+    let (_identity_url, signal_url, _state, batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let batch_id = state.question_batch_id;
     let tenant_id = TenantId::new();
 
     let token = TokenPayload {
@@ -217,9 +225,8 @@ async fn forged_signature_returns_422() {
 
 #[tokio::test]
 async fn batch_mismatch_returns_422() {
-    let (identity_url, signal_url, state) = start_test_servers().await;
+    let (identity_url, signal_url, state, batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let batch_id = state.question_batch_id;
     let tenant_id = TenantId::new();
     let wrong_batch_id = QuestionBatchId::new();
 
@@ -248,7 +255,7 @@ async fn batch_mismatch_returns_422() {
 
 #[tokio::test]
 async fn empty_api_key_returns_401() {
-    let (identity_url, _signal_url, _state) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
 
     let resp = client
@@ -266,7 +273,7 @@ async fn empty_api_key_returns_401() {
 
 #[tokio::test]
 async fn missing_auth_header_returns_401() {
-    let (identity_url, _signal_url, _state) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
 
     // GET /question without Authorization header
@@ -283,7 +290,7 @@ async fn missing_auth_header_returns_401() {
 
 #[tokio::test]
 async fn invalid_session_token_returns_401() {
-    let (identity_url, _signal_url, _state) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
 
     // POST /token/sign with a fake session token
@@ -305,9 +312,8 @@ async fn invalid_session_token_returns_401() {
 
 #[tokio::test]
 async fn error_response_has_consistent_structure() {
-    let (_identity_url, signal_url, state) = start_test_servers().await;
+    let (_identity_url, signal_url, _state, batch_id) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let batch_id = state.question_batch_id;
     let tenant_id = TenantId::new();
 
     // Submit with forged signature to trigger an error

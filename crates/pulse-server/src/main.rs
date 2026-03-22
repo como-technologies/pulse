@@ -12,14 +12,18 @@ use tower_http::{
 };
 use tracing_subscriber::EnvFilter;
 
-use pulse_identity::{Authenticator, InMemorySessionStore, SessionStore, TokenIssuer};
-use pulse_protocol::KeyVersion;
+use pulse_identity::{
+    Authenticator, InMemorySessionStore, QuestionBatch, SamplingEngine, SessionStore, TokenIssuer,
+};
+use pulse_protocol::messages::ResponseType;
+use pulse_protocol::{KeyVersion, QuestionText, UnixTimestamp};
 use pulse_signal::{
     InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore, SpentTokenLedger,
 };
 
 use pulse_server::config::Config;
 use pulse_server::dev_auth::DevAuthenticator;
+use pulse_server::dev_sampling::DevSamplingEngine;
 use pulse_server::key_store::load_or_generate_keypair;
 use pulse_server::sqlite_ledger::SqliteLedger;
 use pulse_server::sqlite_store::SqliteStore;
@@ -77,6 +81,9 @@ async fn main() -> anyhow::Result<()> {
         key_path = %config.key_path.display(),
         key_version = config.key_version,
         auth_provider = %config.auth_provider,
+        sampling_provider = %config.sampling_provider,
+        k_threshold = config.k_threshold,
+        max_tokens_per_batch = config.max_tokens_per_batch,
         "Configuration loaded"
     );
 
@@ -121,27 +128,49 @@ async fn main() -> anyhow::Result<()> {
             }
         };
 
-    let question_batch_id = pulse_protocol::QuestionBatchId::new();
+    // Select sampling engine provider
+    let sampling_engine: Arc<dyn SamplingEngine> = match config.sampling_provider.as_str() {
+        "dev" => {
+            let batch_id = pulse_protocol::QuestionBatchId::new();
+            let batch = QuestionBatch {
+                id: batch_id,
+                question_text: QuestionText::from("How are you feeling about work today?"),
+                response_type: ResponseType::Scale5,
+                expiry: UnixTimestamp(u64::MAX),
+            };
+            tracing::info!(
+                question_batch_id = %batch_id,
+                "Using dev sampling engine (accepts any employee)"
+            );
+            Arc::new(DevSamplingEngine::new(batch, config.max_tokens_per_batch))
+        }
+        other => {
+            anyhow::bail!("unsupported PULSE_SAMPLING_PROVIDER: {other:?}; expected 'dev'");
+        }
+    };
 
-    // Identity zone state — authentication, sessions, token issuance
+    // Identity zone state — authentication, sessions, token issuance, sampling
     let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::new(kp.sk, KeyVersion(config.key_version)),
+        issuer: TokenIssuer::with_sampling(
+            kp.sk,
+            KeyVersion(config.key_version),
+            sampling_engine.clone(),
+        ),
         authenticator,
         session_store,
-        question_batch_id,
+        sampling_engine,
     });
 
     // Signal zone state — anonymous response collection
     let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
-        question_batch_id,
     });
 
     // Identity zone router — authenticated endpoints
     let identity_router = Router::new()
         .route("/auth", post(identity_routes::auth))
-        .route("/question", get(identity_routes::get_question))
+        .route("/question", get(identity_routes::get_questions))
         .route("/token/sign", post(identity_routes::sign_token))
         .with_state(identity_state)
         .layer(PropagateRequestIdLayer::x_request_id())
@@ -159,7 +188,6 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Identity zone listening on {}", config.identity_addr);
     tracing::info!("Signal zone listening on {}", config.signal_addr);
-    tracing::info!("Question batch ID: {question_batch_id}");
 
     let identity_listener = TcpListener::bind(&config.identity_addr).await?;
     let signal_listener = TcpListener::bind(&config.signal_addr).await?;

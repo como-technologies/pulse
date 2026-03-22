@@ -21,6 +21,15 @@ pub struct Config {
     /// Supported values:
     /// - `dev` — accepts any non-empty credential as the employee ID
     pub auth_provider: String,
+    /// Sampling engine provider (`PULSE_SAMPLING_PROVIDER`, default `dev`).
+    ///
+    /// Supported values:
+    /// - `dev` — returns a default question for any employee, enforces frequency caps
+    pub sampling_provider: String,
+    /// K-anonymity threshold (`PULSE_K_THRESHOLD`, default `5`).
+    pub k_threshold: usize,
+    /// Max tokens per employee per batch (`PULSE_MAX_TOKENS_PER_BATCH`, default `1`).
+    pub max_tokens_per_batch: u32,
 }
 
 impl Config {
@@ -35,6 +44,13 @@ impl Config {
                 .parse()
                 .expect("PULSE_KEY_VERSION must be a positive integer"),
             auth_provider: env_or("PULSE_AUTH_PROVIDER", "dev"),
+            sampling_provider: env_or("PULSE_SAMPLING_PROVIDER", "dev"),
+            k_threshold: env_or("PULSE_K_THRESHOLD", "5")
+                .parse()
+                .expect("PULSE_K_THRESHOLD must be a positive integer"),
+            max_tokens_per_batch: env_or("PULSE_MAX_TOKENS_PER_BATCH", "1")
+                .parse()
+                .expect("PULSE_MAX_TOKENS_PER_BATCH must be a positive integer"),
         }
     }
 }

@@ -10,12 +10,14 @@ use std::sync::Arc;
 
 use pulse_crypto::blind_sig;
 use pulse_crypto::{BlindSignature, aead};
-use pulse_identity::{EmployeeId, TokenIssuer};
-use pulse_protocol::messages::{ResponseSubmit, TokenRequest};
+use pulse_identity::{
+    EmployeeId, FrequencyPolicy, InMemorySamplingEngine, QuestionBatch, SamplingEngine, TokenIssuer,
+};
+use pulse_protocol::messages::{ResponseSubmit, ResponseType, TokenRequest};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{
-    BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
-    UnixTimestamp,
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, QuestionText, SignatureBytes,
+    TenantId, UnixTimestamp,
 };
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
@@ -63,19 +65,129 @@ fn main() {
     println!("  Key version: 1");
     println!();
 
-    let ledger = Arc::new(InMemoryLedger::new());
-    let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
-    let issuer = TokenIssuer::new(kp.sk, KeyVersion(1));
-    let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
-    println!("Created Identity zone (TokenIssuer)");
-    println!("Created Signal zone (ResponseCollector + InMemoryLedger + InMemoryStore)");
-    println!();
-
     let batch_id = QuestionBatchId::new();
     let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
     println!("  Batch ID:  {batch_id}");
     println!("  Tenant ID: {tenant_id}");
+
+    // ── SAMPLING ENGINE ──────────────────────────────────────────
+
+    println!();
+    println!(
+        "\
+========================================================
+  SAMPLING ENGINE (Identity Zone — decides WHO gets WHAT)
+========================================================"
+    );
+    println!();
+    println!("The Sampling Engine manages the workforce roster, question");
+    println!("assignments, frequency caps, and k-anonymity coarsening.");
+    println!();
+
+    println!("--- Building org hierarchy ---");
+    println!();
+    println!("  company");
+    println!("    engineering");
+    println!("      backend   (alice, bob, charlie, dave, eve)     — 5 people");
+    println!("      frontend  (frank, grace)                       — 2 people");
+    println!("    sales       (hank, iris, jack)                   — 3 people");
+    println!();
+
+    let mut engine = InMemorySamplingEngine::new(
+        5, // k-anonymity threshold
+        FrequencyPolicy {
+            max_tokens_per_employee_per_batch: 1,
+        },
+    );
+    engine.add_segment("company".into(), None);
+    engine.add_segment("engineering".into(), Some("company".into()));
+    engine.add_segment("backend".into(), Some("engineering".into()));
+    engine.add_segment("frontend".into(), Some("engineering".into()));
+    engine.add_segment("sales".into(), Some("company".into()));
+
+    for name in ["alice", "bob", "charlie", "dave", "eve"] {
+        engine.add_employee(EmployeeId(name.into()), vec!["backend".into()]);
+    }
+    for name in ["frank", "grace"] {
+        engine.add_employee(EmployeeId(name.into()), vec!["frontend".into()]);
+    }
+    for name in ["hank", "iris", "jack"] {
+        engine.add_employee(EmployeeId(name.into()), vec!["sales".into()]);
+    }
+
+    engine.add_batch(QuestionBatch {
+        id: batch_id,
+        question_text: QuestionText::from("How are you feeling about work today?"),
+        response_type: ResponseType::Scale5,
+        expiry: UnixTimestamp(u64::MAX),
+    });
+    engine.assign_all(&batch_id);
+
+    println!("  k-anonymity threshold: 5");
+    println!("  Frequency cap: 1 token per employee per batch");
+    println!("  Question assigned to all 10 employees");
+
+    // ── K-ANONYMITY COARSENING ────────────────────────────────────
+
+    println!();
+    println!("--- K-anonymity coarsening demo ---");
+    println!();
+    println!("  When an employee requests their questions, the Sampling Engine");
+    println!(
+        "  coarsens their segment labels so no group smaller than k={} is",
+        5
+    );
+    println!("  identifiable in the response data.");
+    println!();
+
+    let alice_assignments = engine.assignments_for(&EmployeeId("alice".into()));
+    let frank_assignments = engine.assignments_for(&EmployeeId("frank".into()));
+    let hank_assignments = engine.assignments_for(&EmployeeId("hank".into()));
+
+    println!(
+        "  alice (backend, 5 people):   segments = {:?}",
+        alice_assignments[0]
+            .coarsened_segments
+            .iter()
+            .map(|s| &s.0)
+            .collect::<Vec<_>>()
+    );
+    println!(
+        "  frank (frontend, 2 people):  segments = {:?}  <-- coarsened up!",
+        frank_assignments[0]
+            .coarsened_segments
+            .iter()
+            .map(|s| &s.0)
+            .collect::<Vec<_>>()
+    );
+    println!(
+        "  hank  (sales, 3 people):     segments = {:?}  <-- coarsened up!",
+        hank_assignments[0]
+            .coarsened_segments
+            .iter()
+            .map(|s| &s.0)
+            .collect::<Vec<_>>()
+    );
+    println!();
+    println!("  backend (5 >= k=5): keeps \"backend\"");
+    println!("  frontend (2 < k=5): walks up to \"engineering\" (7 people)");
+    println!("  sales (3 < k=5):    walks up to \"company\" (10 people)");
+    println!();
+    println!("  The Signal zone NEVER receives \"frontend\" or \"sales\" —");
+    println!("  k-anonymity is enforced at the data level, not the UI level.");
+
+    // ── Wire up the TokenIssuer with the Sampling Engine ──────────
+
+    let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(engine);
+    let issuer = TokenIssuer::with_sampling(kp.sk, KeyVersion(1), sampling_engine.clone());
+    let ledger = Arc::new(InMemoryLedger::new());
+    let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
+    let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
+
+    println!();
+    println!("Created Identity zone (TokenIssuer + SamplingEngine)");
+    println!("Created Signal zone (ResponseCollector + InMemoryLedger + InMemoryStore)");
 
     // ── PHASE 1: Identity-Aware Channel ────────────────────────
 
@@ -88,19 +200,23 @@ fn main() {
     );
     println!();
     println!("The client is authenticated. The Identity zone knows this");
-    println!("is \"employee-42\".");
+    println!("is \"alice\" (backend team).");
+    println!();
+    println!("The client received question + coarsened segment_vector from");
+    println!("GET /question. Now it constructs a token with those segments.");
 
     // Step 1: Create token
     println!();
     println!("--- Step 1: Client creates a token payload ---");
     println!();
 
+    let segment_vector = alice_assignments[0].coarsened_segments.clone();
     let token = TokenPayload {
         nonce: Nonce::random(),
         question_batch_id: batch_id,
         tenant_id,
         expiry: UnixTimestamp(u64::MAX),
-        segment_vector: vec!["engineering".into()],
+        segment_vector: segment_vector.clone(),
         attestation_class: AttestationClass::Personal,
         key_version: KeyVersion(1),
     };
@@ -114,7 +230,10 @@ fn main() {
     println!("    question_batch_id:  {batch_id}");
     println!("    tenant_id:          {tenant_id}");
     println!("    expiry:             <far future>");
-    println!("    segment_vector:     [\"engineering\"]");
+    println!(
+        "    segment_vector:     {:?}  (from Sampling Engine)",
+        segment_vector.iter().map(|s| &s.0).collect::<Vec<_>>()
+    );
     println!("    attestation_class:  Personal");
     println!("    key_version:        1");
     println!("  }}");
@@ -137,7 +256,7 @@ fn main() {
     );
     println!("  (The original token is now hidden from the Identity zone)");
 
-    // Step 3: Token Issuer signs
+    // Step 3: Token Issuer signs (with Sampling Engine authorization)
     println!();
     println!("--- Step 3: Token Issuer signs the blinded token ---");
     println!();
@@ -146,15 +265,21 @@ fn main() {
         blinded_token: BlindedToken(blinding_result.blind_message.0.clone()),
         question_batch_id: batch_id,
     };
-    let employee = EmployeeId("employee-42".into());
+    let employee = EmployeeId("alice".into());
     let token_response = issuer
         .sign_token(&employee, &token_request)
         .expect("signing failed");
 
-    println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"employee-42\", ...)");
+    println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"alice\", ...)");
+    println!();
+    println!("  Sampling Engine checks:");
+    println!("    Employee assigned to batch?  YES");
+    println!("    Frequency cap exceeded?      NO  (0 of 1 issued)");
+    println!("    Batch expired?               NO");
+    println!("    -> AUTHORIZED (issuance recorded: alice now at 1/1)");
     println!();
     println!("  What the Identity zone sees:");
-    println!("    Employee ID:    \"employee-42\"              <-- knows WHO");
+    println!("    Employee ID:    \"alice\"                    <-- knows WHO");
     println!(
         "    Blinded token:  {}   <-- opaque blob",
         hex_preview(&blinding_result.blind_message.0)
@@ -177,6 +302,47 @@ fn main() {
     println!("    employee_id = \"{}\"", log[0].employee_id.0);
     println!("    batch_id    = {}", log[0].question_batch_id);
     println!("    (NO token value — only the blinded version was seen)");
+
+    // ── FREQUENCY CAP ENFORCEMENT ─────────────────────────────────
+
+    println!();
+    println!(
+        "\
+========================================================
+  SECURITY: Frequency Cap Enforcement
+========================================================"
+    );
+    println!();
+    println!("--- Alice requests a second token for the same batch ---");
+    println!();
+
+    let token2 = TokenPayload {
+        nonce: Nonce::random(),
+        question_batch_id: batch_id,
+        tenant_id,
+        expiry: UnixTimestamp(u64::MAX),
+        segment_vector: segment_vector.clone(),
+        attestation_class: AttestationClass::Personal,
+        key_version: KeyVersion(1),
+    };
+    let token_bytes2 = token2.to_bytes();
+    let blinding2 = blind_sig::blind(&pk, &token_bytes2.0).expect("blinding failed");
+    let request2 = TokenRequest {
+        blinded_token: BlindedToken(blinding2.blind_message.0.clone()),
+        question_batch_id: batch_id,
+    };
+
+    let denial = issuer.sign_token(&EmployeeId("alice".into()), &request2);
+    assert!(denial.is_err());
+    println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"alice\", ...)");
+    println!();
+    println!("  Sampling Engine checks:");
+    println!("    Frequency cap exceeded?  YES (1 of 1 already issued)");
+    println!("    -> DENIED: {}", denial.unwrap_err());
+    println!();
+    println!("  The Sampling Engine prevents alice from getting a second");
+    println!("  token for the same batch. This is enforced BEFORE signing,");
+    println!("  so no blind signature is produced.");
 
     // ── CLIENT-SIDE ────────────────────────────────────────────
 
@@ -441,7 +607,13 @@ fn main() {
   4. REPLAY-PROOF: Each token can only be spent once, preventing
                    double-voting.
 
-  Run the full test suite to verify all 25 properties:
+  5. FREQUENCY-CAPPED: The Sampling Engine limits token issuance per
+                       employee per batch, preventing over-polling.
+
+  6. K-ANONYMOUS: Segment labels are coarsened at issuance time so
+                  no group smaller than k is identifiable in responses.
+
+  Run the full test suite to verify all properties:
     cargo test
 
 ========================================================"

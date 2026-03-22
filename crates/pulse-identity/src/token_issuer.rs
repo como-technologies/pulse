@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use std::fmt;
 
@@ -8,6 +8,8 @@ use pulse_crypto::BlindMessage;
 use pulse_crypto::blind_sig::{self, BrssSecretKey};
 use pulse_protocol::messages::{TokenDeniedReason, TokenRequest, TokenResponse};
 use pulse_protocol::{BlindSig, KeyVersion, QuestionBatchId, UnixTimestamp};
+
+use crate::sampling::{SamplingEngine, SamplingError};
 
 /// Identity-zone employee identifier.
 ///
@@ -58,14 +60,33 @@ pub struct TokenIssuer {
     key_version: KeyVersion,
     /// Issuance log (identity-aware — records which employee got a token).
     issuance_log: Mutex<Vec<IssuanceRecord>>,
+    /// Optional sampling engine for authorization and frequency cap enforcement.
+    sampling_engine: Option<Arc<dyn SamplingEngine>>,
 }
 
 impl TokenIssuer {
+    /// Create a TokenIssuer without a sampling engine (accepts all requests).
+    /// Used in tests and examples that don't need sampling.
     pub fn new(secret_key: BrssSecretKey, key_version: KeyVersion) -> Self {
         Self {
             secret_key,
             key_version,
             issuance_log: Mutex::new(Vec::new()),
+            sampling_engine: None,
+        }
+    }
+
+    /// Create a TokenIssuer with a sampling engine for authorization enforcement.
+    pub fn with_sampling(
+        secret_key: BrssSecretKey,
+        key_version: KeyVersion,
+        engine: Arc<dyn SamplingEngine>,
+    ) -> Self {
+        Self {
+            secret_key,
+            key_version,
+            issuance_log: Mutex::new(Vec::new()),
+            sampling_engine: Some(engine),
         }
     }
 
@@ -91,11 +112,22 @@ impl TokenIssuer {
         employee_id: &EmployeeId,
         request: &TokenRequest,
     ) -> Result<TokenResponse, IssuerError> {
-        // In a full implementation, this would check:
-        // - Is the employee authorized for this question batch?
-        // - Has the employee already been issued a token for this batch?
-        // - Has the employee exceeded their frequency cap?
-        // For Slice 0, we accept all requests.
+        // Check authorization via sampling engine (if configured)
+        if let Some(engine) = &self.sampling_engine {
+            engine
+                .authorize_and_record_issuance(employee_id, &request.question_batch_id)
+                .map_err(|e| match e {
+                    SamplingError::NotAssigned => {
+                        IssuerError::Denied(TokenDeniedReason::NotAuthorized)
+                    }
+                    SamplingError::FrequencyCapExceeded => {
+                        IssuerError::Denied(TokenDeniedReason::FrequencyCap)
+                    }
+                    SamplingError::BatchExpired => {
+                        IssuerError::Denied(TokenDeniedReason::BatchExpired)
+                    }
+                })?;
+        }
 
         // Sign the blinded token (we never see the actual value)
         let blind_msg = BlindMessage(request.blinded_token.0.clone());
@@ -175,5 +207,111 @@ mod tests {
         let c = EmployeeId("bob".into());
         assert_eq!(a, b);
         assert_ne!(a, c);
+    }
+
+    // ── TokenIssuer + SamplingEngine denial tests ──
+
+    use crate::sampling::{FrequencyPolicy, InMemorySamplingEngine, QuestionBatch};
+    use pulse_protocol::messages::{ResponseType, TokenDeniedReason};
+    use pulse_protocol::{BlindedToken, QuestionBatchId, QuestionText, UnixTimestamp};
+
+    fn issuer_with_sampling() -> (TokenIssuer, QuestionBatchId) {
+        let kp = pulse_crypto::blind_sig::generate_keypair().unwrap();
+        let batch_id = QuestionBatchId::new();
+
+        let mut engine = InMemorySamplingEngine::new(
+            1,
+            FrequencyPolicy {
+                max_tokens_per_employee_per_batch: 1,
+            },
+        );
+        engine.add_segment("company".into(), None);
+        engine.add_employee(EmployeeId("alice".into()), vec!["company".into()]);
+        engine.add_batch(QuestionBatch {
+            id: batch_id,
+            question_text: QuestionText::from("test"),
+            response_type: ResponseType::Scale5,
+            expiry: UnixTimestamp(u64::MAX),
+        });
+        engine.assign(&EmployeeId("alice".into()), &batch_id);
+
+        let issuer = TokenIssuer::with_sampling(kp.sk, KeyVersion(1), Arc::new(engine));
+        (issuer, batch_id)
+    }
+
+    fn make_token_request(batch_id: QuestionBatchId) -> TokenRequest {
+        // Use a minimal blinded token (will fail crypto but we're testing authorization)
+        TokenRequest {
+            blinded_token: BlindedToken(vec![0u8; 256]),
+            question_batch_id: batch_id,
+        }
+    }
+
+    #[test]
+    fn sign_token_denied_not_assigned() {
+        let (issuer, batch_id) = issuer_with_sampling();
+        let bob = EmployeeId("bob".into()); // not in roster/assignments
+
+        let err = issuer
+            .sign_token(&bob, &make_token_request(batch_id))
+            .unwrap_err();
+        assert!(
+            matches!(err, IssuerError::Denied(TokenDeniedReason::NotAuthorized)),
+            "expected NotAuthorized, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn sign_token_denied_frequency_cap() {
+        let (issuer, batch_id) = issuer_with_sampling();
+        let alice = EmployeeId("alice".into());
+        let req = make_token_request(batch_id);
+
+        // First request — authorization passes, then crypto may fail (fake blinded token)
+        // but the issuance is recorded
+        let result = issuer.sign_token(&alice, &req);
+        // It may succeed or fail at signing — either way, the issuance was recorded
+        if result.is_err() {
+            // Signing failed but issuance was recorded — second attempt hits frequency cap
+        }
+
+        let err = issuer.sign_token(&alice, &req).unwrap_err();
+        assert!(
+            matches!(err, IssuerError::Denied(TokenDeniedReason::FrequencyCap)),
+            "expected FrequencyCap, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn sign_token_denied_expired_batch() {
+        let kp = pulse_crypto::blind_sig::generate_keypair().unwrap();
+        let batch_id = QuestionBatchId::new();
+
+        let mut engine = InMemorySamplingEngine::new(
+            1,
+            FrequencyPolicy {
+                max_tokens_per_employee_per_batch: 1,
+            },
+        );
+        engine.add_segment("company".into(), None);
+        engine.add_employee(EmployeeId("alice".into()), vec!["company".into()]);
+        engine.add_batch(QuestionBatch {
+            id: batch_id,
+            question_text: QuestionText::from("test"),
+            response_type: ResponseType::Scale5,
+            expiry: UnixTimestamp(0), // already expired
+        });
+        engine.assign(&EmployeeId("alice".into()), &batch_id);
+
+        let issuer = TokenIssuer::with_sampling(kp.sk, KeyVersion(1), Arc::new(engine));
+        let alice = EmployeeId("alice".into());
+
+        let err = issuer
+            .sign_token(&alice, &make_token_request(batch_id))
+            .unwrap_err();
+        assert!(
+            matches!(err, IssuerError::Denied(TokenDeniedReason::BatchExpired)),
+            "expected BatchExpired, got {err:?}"
+        );
     }
 }

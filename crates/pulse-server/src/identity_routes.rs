@@ -4,8 +4,8 @@ use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 
 use pulse_identity::{AuthError, IssuerError};
-use pulse_protocol::messages::{QuestionDelivery, ResponseType, TokenDeniedReason, TokenRequest};
-use pulse_protocol::{BlindedToken, QuestionBatchId, QuestionText, UnixTimestamp};
+use pulse_protocol::messages::{QuestionDelivery, TokenDeniedReason, TokenRequest};
+use pulse_protocol::{BlindedToken, QuestionBatchId};
 
 use crate::IdentityState;
 use crate::auth_extractor::AuthenticatedEmployee;
@@ -44,17 +44,24 @@ pub async fn auth(
 
 // ── Question delivery ──
 
-/// Return the single hardcoded question (Slice 0). Requires a valid session.
-pub async fn get_question(
-    _employee: AuthenticatedEmployee,
+/// Return the employee's assigned questions with coarsened segment vectors.
+pub async fn get_questions(
+    employee: AuthenticatedEmployee,
     State(state): State<Arc<IdentityState>>,
-) -> Json<QuestionDelivery> {
-    Json(QuestionDelivery {
-        question_batch_id: state.question_batch_id,
-        question_text: QuestionText::from("How are you feeling about work today?"),
-        response_type: ResponseType::Scale5,
-        expiry: UnixTimestamp(u64::MAX),
-    })
+) -> Json<Vec<QuestionDelivery>> {
+    let assignments = state.sampling_engine.assignments_for(&employee.0);
+    Json(
+        assignments
+            .into_iter()
+            .map(|d| QuestionDelivery {
+                question_batch_id: d.question_batch_id,
+                question_text: d.question_text,
+                response_type: d.response_type,
+                expiry: d.expiry,
+                segment_vector: d.coarsened_segments,
+            })
+            .collect(),
+    )
 }
 
 // ── Token signing ──
