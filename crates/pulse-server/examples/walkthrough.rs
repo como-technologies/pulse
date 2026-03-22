@@ -10,9 +10,13 @@ use std::sync::Arc;
 
 use pulse_crypto::blind_sig;
 use pulse_crypto::{aead, BlindSignature};
-use pulse_identity::TokenIssuer;
+use pulse_identity::{EmployeeId, TokenIssuer};
 use pulse_protocol::messages::{ResponseSubmit, TokenRequest};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
+use pulse_protocol::{
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
+    UnixTimestamp,
+};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
 use uuid::Uuid;
 
@@ -62,14 +66,14 @@ fn main() {
 
     let ledger = Arc::new(InMemoryLedger::new());
     let store = Arc::new(InMemoryStore::new());
-    let issuer = TokenIssuer::new(kp.sk, 1);
+    let issuer = TokenIssuer::new(kp.sk, KeyVersion(1));
     let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
     println!("Created Identity zone (TokenIssuer)");
     println!("Created Signal zone (ResponseCollector + InMemoryLedger + InMemoryStore)");
     println!();
 
-    let batch_id = Uuid::new_v4();
-    let tenant_id = Uuid::new_v4();
+    let batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
+    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
     let encryption_key = aead::generate_key();
     println!("  Batch ID:  {batch_id}");
     println!("  Tenant ID: {tenant_id}");
@@ -93,18 +97,18 @@ fn main() {
     println!();
 
     let token = TokenPayload {
-        nonce: rand::random(),
+        nonce: Nonce::random(),
         question_batch_id: batch_id,
         tenant_id,
-        expiry: u64::MAX,
+        expiry: UnixTimestamp(u64::MAX),
         segment_vector: vec!["engineering".into()],
         attestation_class: AttestationClass::Personal,
-        key_version: 1,
+        key_version: KeyVersion(1),
     };
     let token_bytes = token.to_bytes();
 
     println!("  TokenPayload {{");
-    println!("    nonce:              {}  (32 bytes, random)", hex_preview(&token.nonce));
+    println!("    nonce:              {}  (32 bytes, random)", hex_preview(&token.nonce.0));
     println!("    question_batch_id:  {batch_id}");
     println!("    tenant_id:          {tenant_id}");
     println!("    expiry:             <far future>");
@@ -112,14 +116,14 @@ fn main() {
     println!("    attestation_class:  Personal");
     println!("    key_version:        1");
     println!("  }}");
-    println!("  Serialized: {} bytes", token_bytes.len());
+    println!("  Serialized: {} bytes", token_bytes.0.len());
 
     // Step 2: Blind the token
     println!();
     println!("--- Step 2: Client blinds the token ---");
     println!();
 
-    let blinding_result = blind_sig::blind(&pk, &token_bytes).expect("blinding failed");
+    let blinding_result = blind_sig::blind(&pk, &token_bytes.0).expect("blinding failed");
 
     println!("  The client applies a random blinding factor so the Token");
     println!("  Issuer cannot see the actual token content.");
@@ -137,11 +141,12 @@ fn main() {
     println!();
 
     let token_request = TokenRequest {
-        blinded_token: blinding_result.blind_message.0.clone(),
+        blinded_token: BlindedToken(blinding_result.blind_message.0.clone()),
         question_batch_id: batch_id,
     };
+    let employee = EmployeeId("employee-42".into());
     let token_response = issuer
-        .sign_token("employee-42", &token_request)
+        .sign_token(&employee, &token_request)
         .expect("signing failed");
 
     println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"employee-42\", ...)");
@@ -159,15 +164,15 @@ fn main() {
     println!();
     println!(
         "  Blind signature:  {}  ({} bytes)",
-        hex_preview(&token_response.blind_signature),
-        token_response.blind_signature.len()
+        hex_preview(&token_response.blind_signature.0),
+        token_response.blind_signature.0.len()
     );
 
     // Check issuance log
     let log = issuer.issuance_log();
     println!();
     println!("  Issuance log now records:");
-    println!("    employee_id = \"{}\"", log[0].employee_id);
+    println!("    employee_id = \"{}\"", log[0].employee_id.0);
     println!("    batch_id    = {}", log[0].question_batch_id);
     println!("    (NO token value — only the blinded version was seen)");
 
@@ -186,9 +191,9 @@ fn main() {
     println!("--- Step 4: Client unblinds the signature ---");
     println!();
 
-    let blind_sig_val = BlindSignature(token_response.blind_signature);
+    let blind_sig_val = BlindSignature(token_response.blind_signature.0.clone());
     let sig =
-        blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes)
+        blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0)
             .expect("unblinding failed");
 
     println!("  The client removes the blinding factor, producing a valid");
@@ -205,7 +210,7 @@ fn main() {
         &pk,
         &sig,
         blinding_result.msg_randomizer,
-        &token_bytes,
+        &token_bytes.0,
     );
     assert!(verify_result.is_ok(), "client-side verification failed");
     println!();
@@ -251,21 +256,21 @@ fn main() {
 
     let submit = ResponseSubmit {
         token: token_bytes.clone(),
-        signature: sig.0.clone(),
+        signature: SignatureBytes(sig.0.clone()),
         msg_randomizer: blinding_result.msg_randomizer.map(|r| r.0),
-        key_version: 1,
+        key_version: KeyVersion(1),
         question_batch_id: batch_id,
         tenant_id,
-        response_blob: encrypted_response.clone(),
+        response_blob: EncryptedBlob(encrypted_response.clone()),
     };
 
     println!("  ResponseSubmit {{");
-    println!("    token:             {} bytes", submit.token.len());
-    println!("    signature:         {} bytes", submit.signature.len());
+    println!("    token:             {} bytes", submit.token.0.len());
+    println!("    signature:         {} bytes", submit.signature.0.len());
     println!("    key_version:       1");
     println!("    question_batch_id: {batch_id}");
     println!("    tenant_id:         {tenant_id}");
-    println!("    response_blob:     {} bytes (encrypted)", submit.response_blob.len());
+    println!("    response_blob:     {} bytes (encrypted)", submit.response_blob.0.len());
     println!("  }}");
 
     // Step 7: Signal zone validates
@@ -308,7 +313,7 @@ fn main() {
 
     let log = issuer.issuance_log();
     println!("  Issuance log entries: {}", log.len());
-    println!("  Entry: employee_id=\"{}\", batch={}", log[0].employee_id, log[0].question_batch_id);
+    println!("  Entry: employee_id=\"{}\", batch={}", log[0].employee_id.0, log[0].question_batch_id);
     println!("  Contains unblinded token? NO");
     println!("  Contains response content? NO");
 
@@ -323,11 +328,11 @@ fn main() {
 
     println!("  Stored responses: {}", stored.len());
     println!("  Response fields: encrypted_blob ({} bytes), question_batch_id, received_at",
-        stored_response.encrypted_blob.len());
+        stored_response.encrypted_blob.0.len());
     println!("  Contains employee_id? NO (not in StoredResponse — enforced by types)");
     println!();
 
-    let decrypted = aead::decrypt(&encryption_key, &stored_response.encrypted_blob)
+    let decrypted = aead::decrypt(&encryption_key, &stored_response.encrypted_blob.0)
         .expect("decryption failed");
     assert_eq!(decrypted, b"4");
     println!("  Decrypting stored blob with client's key: \"{}\"",
@@ -368,27 +373,27 @@ fn main() {
     println!();
 
     let forged_token = TokenPayload {
-        nonce: rand::random(),
+        nonce: Nonce::random(),
         question_batch_id: batch_id,
         tenant_id,
-        expiry: u64::MAX,
+        expiry: UnixTimestamp(u64::MAX),
         segment_vector: vec!["engineering".into()],
         attestation_class: AttestationClass::Personal,
-        key_version: 1,
+        key_version: KeyVersion(1),
     };
     let forged_token_bytes = forged_token.to_bytes();
 
     let forged_submit = ResponseSubmit {
         token: forged_token_bytes,
-        signature: vec![0xDE; 256],
+        signature: SignatureBytes(vec![0xDE; 256]),
         msg_randomizer: None,
-        key_version: 1,
+        key_version: KeyVersion(1),
         question_batch_id: batch_id,
         tenant_id,
-        response_blob: vec![0x00],
+        response_blob: EncryptedBlob(vec![0x00]),
     };
 
-    println!("  Forged signature: {} (256 bytes of 0xDE)", hex_preview(&forged_submit.signature));
+    println!("  Forged signature: {} (256 bytes of 0xDE)", hex_preview(&forged_submit.signature.0));
     println!();
 
     let forge_result = collector.accept(&forged_submit);

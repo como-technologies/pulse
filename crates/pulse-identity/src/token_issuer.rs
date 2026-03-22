@@ -1,17 +1,25 @@
 use std::sync::Mutex;
 
+use serde::{Deserialize, Serialize};
+
 use pulse_crypto::BlindMessage;
 use pulse_crypto::blind_sig::{self, BrssSecretKey};
 use pulse_protocol::messages::{TokenDeniedReason, TokenRequest, TokenResponse};
+use pulse_protocol::{BlindSig, KeyVersion, QuestionBatchId, UnixTimestamp};
+
+/// Identity-zone employee identifier.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EmployeeId(pub String);
 
 /// Record of a token issuance — stored in the Identity zone.
 /// Contains employee identity (this is the Identity zone — it knows WHO).
 /// Never contains the unblinded token value.
 #[derive(Debug, Clone)]
 pub struct IssuanceRecord {
-    pub employee_id: String,
-    pub question_batch_id: uuid::Uuid,
-    pub issued_at: u64,
+    pub employee_id: EmployeeId,
+    pub question_batch_id: QuestionBatchId,
+    pub issued_at: UnixTimestamp,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -30,13 +38,13 @@ pub struct TokenIssuer {
     /// The signing secret key.
     secret_key: BrssSecretKey,
     /// Current key version.
-    key_version: u32,
+    key_version: KeyVersion,
     /// Issuance log (identity-aware — records which employee got a token).
     issuance_log: Mutex<Vec<IssuanceRecord>>,
 }
 
 impl TokenIssuer {
-    pub fn new(secret_key: BrssSecretKey, key_version: u32) -> Self {
+    pub fn new(secret_key: BrssSecretKey, key_version: KeyVersion) -> Self {
         Self {
             secret_key,
             key_version,
@@ -51,7 +59,7 @@ impl TokenIssuer {
     /// the actual token value.
     pub fn sign_token(
         &self,
-        employee_id: &str,
+        employee_id: &EmployeeId,
         request: &TokenRequest,
     ) -> Result<TokenResponse, IssuerError> {
         // In a full implementation, this would check:
@@ -61,26 +69,23 @@ impl TokenIssuer {
         // For Slice 0, we accept all requests.
 
         // Sign the blinded token (we never see the actual value)
-        let blind_msg = BlindMessage(request.blinded_token.clone());
+        let blind_msg = BlindMessage(request.blinded_token.0.clone());
         let blind_sig = blind_sig::blind_sign(&self.secret_key, &blind_msg)?;
 
         // Record the issuance (identity-aware log)
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = UnixTimestamp::now();
 
         self.issuance_log
             .lock()
             .expect("issuance log lock poisoned")
             .push(IssuanceRecord {
-                employee_id: employee_id.to_string(),
+                employee_id: employee_id.clone(),
                 question_batch_id: request.question_batch_id,
                 issued_at: now,
             });
 
         Ok(TokenResponse {
-            blind_signature: blind_sig.0,
+            blind_signature: BlindSig(blind_sig.0),
             key_version: self.key_version,
         })
     }

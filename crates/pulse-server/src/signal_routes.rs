@@ -3,8 +3,9 @@ use std::sync::Arc;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
-use pulse_signal::ResponseStore;
 use pulse_protocol::messages::ResponseSubmit;
+use pulse_protocol::{QuestionBatchId, UnixTimestamp};
+use pulse_signal::ResponseStore;
 
 use crate::AppState;
 
@@ -36,9 +37,9 @@ struct DebugResponse {
 
 #[derive(Serialize)]
 struct DebugResponseEntry {
-    question_batch_id: String,
+    question_batch_id: QuestionBatchId,
     encrypted_blob_len: usize,
-    received_at: u64,
+    received_at: UnixTimestamp,
 }
 
 pub async fn debug_responses(State(state): State<Arc<AppState>>) -> impl IntoResponse {
@@ -48,8 +49,8 @@ pub async fn debug_responses(State(state): State<Arc<AppState>>) -> impl IntoRes
         responses: stored
             .iter()
             .map(|r| DebugResponseEntry {
-                question_batch_id: r.question_batch_id.to_string(),
-                encrypted_blob_len: r.encrypted_blob.len(),
+                question_batch_id: r.question_batch_id,
+                encrypted_blob_len: r.encrypted_blob.0.len(),
                 received_at: r.received_at,
             })
             .collect(),

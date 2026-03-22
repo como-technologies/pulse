@@ -11,43 +11,45 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 use uuid::Uuid;
 
-use pulse_identity::TokenIssuer;
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use pulse_crypto::{aead, blind_sig};
+use pulse_identity::TokenIssuer;
 use pulse_protocol::token::{AttestationClass, TokenPayload};
+use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 // Replicate AppState here since it's in main.rs (binary crate)
 struct TestAppState {
     issuer: TokenIssuer,
     collector: ResponseCollector,
     store: Arc<InMemoryStore>,
-    question_batch_id: Uuid,
+    question_batch_id: QuestionBatchId,
 }
 
 // Route handler wrappers that reference TestAppState
 mod handlers {
     use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-    use pulse_signal::ResponseStore;
+    use pulse_identity::EmployeeId;
     use pulse_protocol::messages::{QuestionDelivery, ResponseSubmit, ResponseType, TokenRequest};
+    use pulse_protocol::{BlindedToken, QuestionBatchId, QuestionText, UnixTimestamp};
+    use pulse_signal::ResponseStore;
     use serde::Deserialize;
     use std::sync::Arc;
-    use uuid::Uuid;
 
     use super::TestAppState;
 
     #[derive(Deserialize)]
     pub struct SignRequest {
         pub employee_id: String,
-        pub blinded_token: Vec<u8>,
-        pub question_batch_id: Uuid,
+        pub blinded_token: BlindedToken,
+        pub question_batch_id: QuestionBatchId,
     }
 
     pub async fn get_question(State(state): State<Arc<TestAppState>>) -> Json<QuestionDelivery> {
         Json(QuestionDelivery {
             question_batch_id: state.question_batch_id,
-            question_text: "How are you feeling about work today?".to_string(),
+            question_text: QuestionText::from("How are you feeling about work today?"),
             response_type: ResponseType::Scale5,
-            expiry: u64::MAX,
+            expiry: UnixTimestamp(u64::MAX),
         })
     }
 
@@ -59,7 +61,8 @@ mod handlers {
             blinded_token: req.blinded_token,
             question_batch_id: req.question_batch_id,
         };
-        match state.issuer.sign_token(&req.employee_id, &token_request) {
+        let employee_id = EmployeeId(req.employee_id);
+        match state.issuer.sign_token(&employee_id, &token_request) {
             Ok(resp) => (
                 StatusCode::OK,
                 Json(serde_json::json!({
@@ -107,10 +110,10 @@ async fn start_test_servers() -> (String, String, Arc<TestAppState>) {
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store = Arc::new(InMemoryStore::new());
-    let question_batch_id = Uuid::new_v4();
+    let question_batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
 
     let state = Arc::new(TestAppState {
-        issuer: TokenIssuer::new(kp.sk, 1),
+        issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,
@@ -148,7 +151,7 @@ async fn full_http_flow() {
     let (identity_url, signal_url, state) = start_test_servers().await;
     let client = reqwest::Client::new();
     let batch_id = state.question_batch_id;
-    let tenant_id = Uuid::new_v4();
+    let tenant_id = TenantId::from_uuid(Uuid::new_v4());
     let encryption_key = aead::generate_key();
 
     // 1. Get question from Identity zone
@@ -160,22 +163,22 @@ async fn full_http_flow() {
         .json()
         .await
         .unwrap();
-    assert_eq!(question["question_batch_id"], batch_id.to_string());
+    assert_eq!(question["question_batch_id"], batch_id.0.to_string());
 
     // 2. Create and blind a token
     let token = TokenPayload {
-        nonce: rand::random(),
+        nonce: Nonce::random(),
         question_batch_id: batch_id,
         tenant_id,
-        expiry: u64::MAX,
+        expiry: UnixTimestamp(u64::MAX),
         segment_vector: vec!["engineering".into()],
         attestation_class: AttestationClass::Personal,
-        key_version: 1,
+        key_version: KeyVersion(1),
     };
     let token_bytes = token.to_bytes();
 
     let pk = &state.collector.public_key();
-    let blinding_result = blind_sig::blind(pk, &token_bytes).unwrap();
+    let blinding_result = blind_sig::blind(pk, &token_bytes.0).unwrap();
 
     // 3. Request blind signature from Identity zone
     let sign_resp: Value = client
@@ -183,7 +186,7 @@ async fn full_http_flow() {
         .json(&serde_json::json!({
             "employee_id": "employee-42",
             "blinded_token": blinding_result.blind_message.0,
-            "question_batch_id": batch_id,
+            "question_batch_id": batch_id.0,
         }))
         .send()
         .await
@@ -201,7 +204,7 @@ async fn full_http_flow() {
 
     // 4. Unblind the signature
     let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
-    let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes).unwrap();
+    let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
     // 5. Encrypt response
     let encrypted_response = aead::encrypt(&encryption_key, b"5").unwrap();
@@ -210,12 +213,12 @@ async fn full_http_flow() {
     let submit_resp = client
         .post(format!("{signal_url}/response"))
         .json(&serde_json::json!({
-            "token": token_bytes,
+            "token": token_bytes.0,
             "signature": sig.0,
             "msg_randomizer": blinding_result.msg_randomizer.map(|r| r.0),
             "key_version": 1,
-            "question_batch_id": batch_id,
-            "tenant_id": tenant_id,
+            "question_batch_id": batch_id.0,
+            "tenant_id": tenant_id.0,
             "response_blob": encrypted_response,
         }))
         .send()
@@ -241,12 +244,12 @@ async fn full_http_flow() {
     let dup_resp = client
         .post(format!("{signal_url}/response"))
         .json(&serde_json::json!({
-            "token": token_bytes,
+            "token": token_bytes.0,
             "signature": sig.0,
             "msg_randomizer": blinding_result.msg_randomizer.map(|r| r.0),
             "key_version": 1,
-            "question_batch_id": batch_id,
-            "tenant_id": tenant_id,
+            "question_batch_id": batch_id.0,
+            "tenant_id": tenant_id.0,
             "response_blob": encrypted_response,
         }))
         .send()

@@ -5,11 +5,11 @@ use axum::{
     routing::{get, post},
 };
 use tokio::net::TcpListener;
-use uuid::Uuid;
 
-use pulse_identity::TokenIssuer;
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use pulse_crypto::blind_sig;
+use pulse_identity::TokenIssuer;
+use pulse_protocol::{KeyVersion, QuestionBatchId};
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 mod identity_routes;
 mod signal_routes;
@@ -23,7 +23,7 @@ pub struct AppState {
     pub issuer: TokenIssuer,
     pub collector: ResponseCollector,
     pub store: Arc<InMemoryStore>,
-    pub question_batch_id: Uuid,
+    pub question_batch_id: QuestionBatchId,
 }
 
 #[tokio::main]
@@ -39,10 +39,10 @@ async fn main() -> anyhow::Result<()> {
     // Shared infrastructure (in-memory for Slice 0)
     let ledger = Arc::new(InMemoryLedger::new());
     let store = Arc::new(InMemoryStore::new());
-    let question_batch_id = Uuid::new_v4();
+    let question_batch_id = QuestionBatchId::new();
 
     let state = Arc::new(AppState {
-        issuer: TokenIssuer::new(kp.sk, 1),
+        issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,

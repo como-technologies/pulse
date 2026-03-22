@@ -1,14 +1,16 @@
 use std::sync::Mutex;
 
+use pulse_protocol::{EncryptedBlob, QuestionBatchId, UnixTimestamp};
+
 /// A stored anonymous response — encrypted blob with metadata.
 #[derive(Debug, Clone)]
 pub struct StoredResponse {
     /// The encrypted response blob (opaque ciphertext).
-    pub encrypted_blob: Vec<u8>,
+    pub encrypted_blob: EncryptedBlob,
     /// Question batch this response belongs to.
-    pub question_batch_id: uuid::Uuid,
+    pub question_batch_id: QuestionBatchId,
     /// Unix timestamp when the response was received.
-    pub received_at: u64,
+    pub received_at: UnixTimestamp,
 }
 
 /// Trait for persisting anonymous responses.

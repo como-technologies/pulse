@@ -1,10 +1,10 @@
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use pulse_crypto::blind_sig::{self, BrssPublicKey};
 use pulse_crypto::{MessageRandomizer, Signature};
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::token::TokenPayload;
+use pulse_protocol::UnixTimestamp;
 
 use crate::ledger::{SpendResult, SpentTokenLedger, TokenHash};
 use crate::store::{ResponseStore, StoredResponse};
@@ -49,7 +49,7 @@ impl ResponseCollector {
     /// Process an anonymous response submission.
     pub fn accept(&self, submit: &ResponseSubmit) -> Result<(), CollectorError> {
         // 1. Deserialize the token payload
-        let token = TokenPayload::from_bytes(&submit.token)
+        let token = TokenPayload::from_bytes(&submit.token.0)
             .map_err(|_| CollectorError::Rejected(RejectReason::Malformed))?;
 
         // 2. Check token fields
@@ -60,23 +60,20 @@ impl ResponseCollector {
             return Err(CollectorError::Rejected(RejectReason::TenantMismatch));
         }
 
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = UnixTimestamp::now();
         if token.is_expired(now) {
             return Err(CollectorError::Rejected(RejectReason::TokenExpired));
         }
 
         // 3. Verify the blind signature
-        let sig = Signature(submit.signature.clone());
+        let sig = Signature(submit.signature.0.clone());
         let msg_randomizer = submit.msg_randomizer.map(MessageRandomizer);
 
-        blind_sig::verify(&self.pub_key, &sig, msg_randomizer, &submit.token)
+        blind_sig::verify(&self.pub_key, &sig, msg_randomizer, &submit.token.0)
             .map_err(|_| CollectorError::Rejected(RejectReason::InvalidSignature))?;
 
         // 4. Check the spent-token ledger (atomic check-and-spend)
-        let token_hash = TokenHash::from_token_bytes(&submit.token);
+        let token_hash = TokenHash::from_token_bytes(&submit.token.0);
         match self.ledger.check_and_spend(token_hash) {
             SpendResult::Accepted => {}
             SpendResult::AlreadySpent => {

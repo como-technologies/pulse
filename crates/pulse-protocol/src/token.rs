@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+
+use crate::{KeyVersion, Nonce, QuestionBatchId, SegmentLabel, TenantId, TokenBytes, UnixTimestamp};
 
 /// Device attestation class — determines the identity confidence of the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,25 +23,25 @@ pub enum AttestationClass {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenPayload {
     /// Random unique value preventing token collision.
-    pub nonce: [u8; 32],
+    pub nonce: Nonce,
     /// Scopes the token to a specific question batch.
-    pub question_batch_id: Uuid,
+    pub question_batch_id: QuestionBatchId,
     /// Prevents cross-tenant token reuse.
-    pub tenant_id: Uuid,
+    pub tenant_id: TenantId,
     /// Unix timestamp bounding the validity window.
-    pub expiry: u64,
+    pub expiry: UnixTimestamp,
     /// Coarsened org segment identifiers (embedded at issuance time for k-anonymity).
-    pub segment_vector: Vec<String>,
+    pub segment_vector: Vec<SegmentLabel>,
     /// Device class that obtained this token.
     pub attestation_class: AttestationClass,
     /// Which signing key version was used.
-    pub key_version: u32,
+    pub key_version: KeyVersion,
 }
 
 impl TokenPayload {
     /// Serialize the token to bytes for blind signing.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).expect("token serialization cannot fail")
+    pub fn to_bytes(&self) -> TokenBytes {
+        TokenBytes(serde_json::to_vec(self).expect("token serialization cannot fail"))
     }
 
     /// Deserialize a token from bytes.
@@ -49,8 +50,8 @@ impl TokenPayload {
     }
 
     /// Check whether the token has expired relative to the given timestamp.
-    pub fn is_expired(&self, now_unix: u64) -> bool {
-        now_unix >= self.expiry
+    pub fn is_expired(&self, now: UnixTimestamp) -> bool {
+        now.0 >= self.expiry.0
     }
 }
 
@@ -60,46 +61,32 @@ mod tests {
 
     fn sample_token() -> TokenPayload {
         TokenPayload {
-            nonce: rand_nonce(),
-            question_batch_id: Uuid::new_v4(),
-            tenant_id: Uuid::new_v4(),
-            expiry: 1_700_000_000,
+            nonce: Nonce::random(),
+            question_batch_id: QuestionBatchId::new(),
+            tenant_id: TenantId::new(),
+            expiry: UnixTimestamp(1_700_000_000),
             segment_vector: vec!["engineering".into(), "backend".into()],
             attestation_class: AttestationClass::Personal,
-            key_version: 1,
+            key_version: KeyVersion(1),
         }
-    }
-
-    fn rand_nonce() -> [u8; 32] {
-        let mut nonce = [0u8; 32];
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let seed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        // Simple pseudo-random for tests; real code uses rand::random()
-        for (i, byte) in nonce.iter_mut().enumerate() {
-            *byte = ((seed >> (i % 16)) & 0xFF) as u8;
-        }
-        nonce
     }
 
     #[test]
     fn serialize_deserialize_round_trip() {
         let token = sample_token();
         let bytes = token.to_bytes();
-        let recovered = TokenPayload::from_bytes(&bytes).unwrap();
+        let recovered = TokenPayload::from_bytes(&bytes.0).unwrap();
         assert_eq!(token, recovered);
     }
 
     #[test]
     fn expiry_check() {
         let token = TokenPayload {
-            expiry: 1_000,
+            expiry: UnixTimestamp(1_000),
             ..sample_token()
         };
-        assert!(!token.is_expired(999));
-        assert!(token.is_expired(1_000));
-        assert!(token.is_expired(1_001));
+        assert!(!token.is_expired(UnixTimestamp(999)));
+        assert!(token.is_expired(UnixTimestamp(1_000)));
+        assert!(token.is_expired(UnixTimestamp(1_001)));
     }
 }
