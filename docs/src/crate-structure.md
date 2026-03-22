@@ -28,11 +28,14 @@ Identity zone domain logic. Defines traits and core types for the identity zone:
 - `SamplingEngine` trait — question assignment, k-anonymity coarsening, frequency caps
 - `Authenticator` trait — pluggable credential verification
 - `SessionStore` trait — session token management
+- `TenantSigningKeyStore` trait — per-tenant blind-signature signing key lookup
 - `InMemorySamplingEngine` — full in-memory implementation for tests and examples
 
 ## pulse-signal
 
 Signal zone domain logic. `ResponseCollector`: signature verification, spent-token ledger, response storage.
+
+- `TenantVerificationKeyStore` trait — per-tenant blind-signature verification key lookup (by tenant + key version)
 
 Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `Arc<dyn ResponseStore>`), not concrete storage -- swap the adapter without touching domain code.
 

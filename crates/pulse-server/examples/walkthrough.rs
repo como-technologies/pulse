@@ -19,6 +19,7 @@ use pulse_protocol::{
     BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, QuestionText, SignatureBytes,
     TenantId, UnixTimestamp,
 };
+use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 /// Show first and last 4 bytes of a byte slice as hex.
@@ -62,11 +63,13 @@ fn main() {
     println!("Generating RSA-2048 blind signature keypair (RFC 9474)...");
     let kp = blind_sig::generate_keypair().expect("keygen failed");
     let pk = kp.pk.clone();
+    let key_store = Arc::new(InMemoryTenantKeyStore::new());
     println!("  Key version: 1");
     println!();
 
     let batch_id = QuestionBatchId::new();
     let tenant_id = TenantId::new();
+    key_store.register_tenant(tenant_id, kp.sk, kp.pk, KeyVersion(1));
     let encryption_key = aead::generate_key();
     println!("  Batch ID:  {batch_id}");
     println!("  Tenant ID: {tenant_id}");
@@ -180,10 +183,10 @@ fn main() {
     // ── Wire up the TokenIssuer with the Sampling Engine ──────────
 
     let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(engine);
-    let issuer = TokenIssuer::with_sampling(kp.sk, KeyVersion(1), sampling_engine.clone());
+    let issuer = TokenIssuer::with_sampling(key_store.clone(), sampling_engine.clone());
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
-    let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
+    let collector = ResponseCollector::new(key_store, ledger, store.clone());
 
     println!();
     println!("Created Identity zone (TokenIssuer + SamplingEngine)");
@@ -267,7 +270,7 @@ fn main() {
     };
     let employee = EmployeeId("alice".into());
     let token_response = issuer
-        .sign_token(&employee, &token_request)
+        .sign_token(&tenant_id, &employee, &token_request)
         .expect("signing failed");
 
     println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"alice\", ...)");
@@ -332,7 +335,7 @@ fn main() {
         question_batch_id: batch_id,
     };
 
-    let denial = issuer.sign_token(&EmployeeId("alice".into()), &request2);
+    let denial = issuer.sign_token(&tenant_id, &EmployeeId("alice".into()), &request2);
     assert!(denial.is_err());
     println!("  [IDENTITY ZONE] TokenIssuer.sign_token(\"alice\", ...)");
     println!();

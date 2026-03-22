@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use pulse_protocol::{EncryptedBlob, QuestionBatchId, UnixTimestamp};
+use pulse_protocol::{EncryptedBlob, QuestionBatchId, TenantId, UnixTimestamp};
 
 // ANCHOR: stored_response
 /// A stored anonymous response — encrypted blob with metadata.
@@ -10,6 +10,8 @@ pub struct StoredResponse {
     pub encrypted_blob: EncryptedBlob,
     /// Question batch this response belongs to.
     pub question_batch_id: QuestionBatchId,
+    /// Tenant this response belongs to.
+    pub tenant_id: TenantId,
     /// Unix timestamp when the response was received.
     pub received_at: UnixTimestamp,
 }

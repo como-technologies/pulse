@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use pulse_protocol::{EncryptedBlob, QuestionBatchId, UnixTimestamp};
+use pulse_protocol::{EncryptedBlob, QuestionBatchId, TenantId, UnixTimestamp};
 use pulse_signal::{ResponseStore, SpendResult, SpentTokenLedger, StoredResponse};
 
 use pulse_server::sqlite_ledger::SqliteLedger;
@@ -51,6 +51,7 @@ fn make_response(blob: &[u8]) -> StoredResponse {
     StoredResponse {
         encrypted_blob: EncryptedBlob(blob.to_vec()),
         question_batch_id: QuestionBatchId::new(),
+        tenant_id: TenantId::new(),
         received_at: UnixTimestamp(1_700_000_000),
     }
 }
@@ -119,6 +120,7 @@ fn sqlite_store_survives_reopen() {
         store.store(StoredResponse {
             encrypted_blob: EncryptedBlob(b"persisted-data".to_vec()),
             question_batch_id: batch_id,
+            tenant_id: TenantId::new(),
             received_at: UnixTimestamp(1_700_000_000),
         });
         assert_eq!(store.count(), 1);

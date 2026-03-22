@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use pulse_crypto::blind_sig::{self, BrssPublicKey};
+use pulse_crypto::blind_sig;
 use pulse_crypto::{MessageRandomizer, Signature};
+use pulse_protocol::KeyVersion;
 use pulse_protocol::UnixTimestamp;
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::token::TokenPayload;
 
 use crate::ledger::{SpendResult, SpentTokenLedger, TokenHash};
 use crate::store::{ResponseStore, StoredResponse};
+use crate::tenant_keys::TenantVerificationKeyStore;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CollectorError {
@@ -20,8 +22,8 @@ pub enum CollectorError {
 /// Lives in the Signal zone. Never knows who submitted a response.
 /// Verifies blind signatures, checks the spent-token ledger, and stores encrypted blobs.
 pub struct ResponseCollector {
-    /// The Token Issuer's public key (the only artifact shared from the Identity zone).
-    pub_key: BrssPublicKey,
+    /// Per-tenant verification key store.
+    key_store: Arc<dyn TenantVerificationKeyStore>,
     /// Append-only spent-token ledger.
     ledger: Arc<dyn SpentTokenLedger>,
     /// Encrypted response storage.
@@ -30,20 +32,15 @@ pub struct ResponseCollector {
 
 impl ResponseCollector {
     pub fn new(
-        pub_key: BrssPublicKey,
+        key_store: Arc<dyn TenantVerificationKeyStore>,
         ledger: Arc<dyn SpentTokenLedger>,
         store: Arc<dyn ResponseStore>,
     ) -> Self {
         Self {
-            pub_key,
+            key_store,
             ledger,
             store,
         }
-    }
-
-    /// Get a reference to the public verification key.
-    pub fn public_key(&self) -> &BrssPublicKey {
-        &self.pub_key
     }
 
     /// Process an anonymous response submission.
@@ -76,15 +73,22 @@ impl ResponseCollector {
             return Err(CollectorError::Rejected(RejectReason::TokenExpired));
         }
 
-        // 3. Verify the blind signature
+        // 3. Look up the verification key for this tenant + key version
+        tracing::debug!("looking up tenant verification key");
+        let pub_key = self
+            .key_store
+            .verification_key(&token.tenant_id, &KeyVersion(token.key_version.0))
+            .map_err(|_| CollectorError::Rejected(RejectReason::TenantMismatch))?;
+
+        // 4. Verify the blind signature
         tracing::debug!("verifying blind signature");
         let sig = Signature(submit.signature.0.clone());
         let msg_randomizer = submit.msg_randomizer.map(MessageRandomizer);
 
-        blind_sig::verify(&self.pub_key, &sig, msg_randomizer, &submit.token.0)
+        blind_sig::verify(&pub_key, &sig, msg_randomizer, &submit.token.0)
             .map_err(|_| CollectorError::Rejected(RejectReason::InvalidSignature))?;
 
-        // 4. Check the spent-token ledger (atomic check-and-spend)
+        // 5. Check the spent-token ledger (atomic check-and-spend)
         tracing::debug!("checking spent-token ledger");
         let token_hash = TokenHash::from_token_bytes(&submit.token.0);
         match self.ledger.check_and_spend(token_hash) {
@@ -94,11 +98,12 @@ impl ResponseCollector {
             }
         }
 
-        // 5. Store the encrypted response blob (no identity info)
+        // 6. Store the encrypted response blob (no identity info)
         tracing::debug!("storing encrypted response");
         self.store.store(StoredResponse {
             encrypted_blob: submit.response_blob.clone(),
             question_batch_id: submit.question_batch_id,
+            tenant_id: submit.tenant_id,
             received_at: now,
         });
 
@@ -112,21 +117,60 @@ mod tests {
     use super::*;
     use crate::ledger::InMemoryLedger;
     use crate::store::InMemoryStore;
-    use pulse_crypto::blind_sig;
+    use crate::tenant_keys::TenantKeyError;
+    use pulse_crypto::blind_sig::{self, BrssPublicKey};
     use pulse_protocol::messages::ResponseSubmit;
     use pulse_protocol::token::AttestationClass;
     use pulse_protocol::{
         EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
     };
+    use std::collections::HashMap;
+    use std::sync::Mutex;
     use tracing_test::traced_test;
 
-    fn setup() -> (ResponseCollector, pulse_crypto::BrssPublicKey) {
+    /// Simple in-memory verification key store for unit tests.
+    struct TestVerificationKeyStore {
+        keys: Mutex<HashMap<(TenantId, KeyVersion), BrssPublicKey>>,
+    }
+
+    impl TestVerificationKeyStore {
+        fn new() -> Self {
+            Self {
+                keys: Mutex::new(HashMap::new()),
+            }
+        }
+        fn register(&self, tenant_id: TenantId, kv: KeyVersion, pk: BrssPublicKey) {
+            self.keys
+                .lock()
+                .expect("lock poisoned")
+                .insert((tenant_id, kv), pk);
+        }
+    }
+
+    impl TenantVerificationKeyStore for TestVerificationKeyStore {
+        fn verification_key(
+            &self,
+            tenant_id: &TenantId,
+            key_version: &KeyVersion,
+        ) -> Result<BrssPublicKey, TenantKeyError> {
+            let guard = self.keys.lock().expect("lock poisoned");
+            guard
+                .get(&(*tenant_id, *key_version))
+                .cloned()
+                .ok_or(TenantKeyError::TenantNotFound(*tenant_id))
+        }
+    }
+
+    fn setup() -> (ResponseCollector, pulse_crypto::BrssPublicKey, TenantId) {
         let kp = blind_sig::generate_keypair().unwrap();
         let pk = kp.pk.clone();
+        let tenant_id = TenantId::new();
+        let key_store = Arc::new(TestVerificationKeyStore::new());
+        key_store.register(tenant_id, KeyVersion(1), kp.pk);
         let ledger = Arc::new(InMemoryLedger::new());
         let store = Arc::new(InMemoryStore::new());
-        let collector = ResponseCollector::new(kp.pk, ledger, store);
-        (collector, pk)
+        let collector = ResponseCollector::new(key_store, ledger, store);
+        (collector, pk, tenant_id)
     }
 
     fn make_forged_submit(batch_id: QuestionBatchId, tenant_id: TenantId) -> ResponseSubmit {
@@ -156,13 +200,17 @@ mod tests {
         ResponseCollector,
         pulse_crypto::BrssPublicKey,
         pulse_crypto::BrssSecretKey,
+        TenantId,
     ) {
         let kp = blind_sig::generate_keypair().unwrap();
         let pk = kp.pk.clone();
+        let tenant_id = TenantId::new();
+        let key_store = Arc::new(TestVerificationKeyStore::new());
+        key_store.register(tenant_id, KeyVersion(1), kp.pk);
         let ledger = Arc::new(InMemoryLedger::new());
         let store = Arc::new(InMemoryStore::new());
-        let collector = ResponseCollector::new(kp.pk, ledger, store);
-        (collector, pk, kp.sk)
+        let collector = ResponseCollector::new(key_store, ledger, store);
+        (collector, pk, kp.sk, tenant_id)
     }
 
     fn make_signed_submit(
@@ -200,9 +248,8 @@ mod tests {
     #[traced_test]
     #[test]
     fn accept_logs_success() {
-        let (collector, pk, sk) = full_setup();
+        let (collector, pk, sk, tenant_id) = full_setup();
         let batch_id = QuestionBatchId::new();
-        let tenant_id = TenantId::new();
 
         let submit = make_signed_submit(&pk, &sk, batch_id, tenant_id);
         collector.accept(&submit).unwrap();
@@ -216,9 +263,8 @@ mod tests {
     #[traced_test]
     #[test]
     fn duplicate_submission_does_not_log_success() {
-        let (collector, pk, sk) = full_setup();
+        let (collector, pk, sk, tenant_id) = full_setup();
         let batch_id = QuestionBatchId::new();
-        let tenant_id = TenantId::new();
 
         let submit = make_signed_submit(&pk, &sk, batch_id, tenant_id);
         collector.accept(&submit).unwrap();
@@ -231,9 +277,8 @@ mod tests {
     #[traced_test]
     #[test]
     fn forged_signature_logs_no_success() {
-        let (collector, _pk) = setup();
+        let (collector, _pk, tenant_id) = setup();
         let batch_id = QuestionBatchId::new();
-        let tenant_id = TenantId::new();
 
         let submit = make_forged_submit(batch_id, tenant_id);
         let result = collector.accept(&submit);

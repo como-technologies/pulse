@@ -23,6 +23,7 @@ use pulse_protocol::{
     BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
     UnixTimestamp,
 };
+use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 fn setup() -> (
@@ -30,14 +31,20 @@ fn setup() -> (
     ResponseCollector,
     Arc<dyn pulse_signal::ResponseStore>,
     pulse_crypto::BrssPublicKey,
+    TenantId,
 ) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
-    let issuer = TokenIssuer::new(kp.sk, KeyVersion(1));
+    let tenant_id = TenantId::new();
+
+    let key_store = Arc::new(InMemoryTenantKeyStore::new());
+    key_store.register_tenant(tenant_id, kp.sk, kp.pk.clone(), KeyVersion(1));
+
+    let issuer = TokenIssuer::new(key_store.clone());
     let ledger = Arc::new(InMemoryLedger::new());
     let store = Arc::new(InMemoryStore::new());
-    let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
-    (issuer, collector, store, pk)
+    let collector = ResponseCollector::new(key_store, ledger, store.clone());
+    (issuer, collector, store, pk, tenant_id)
 }
 
 fn make_token(batch_id: QuestionBatchId, tenant_id: TenantId) -> TokenPayload {
@@ -54,9 +61,8 @@ fn make_token(batch_id: QuestionBatchId, tenant_id: TenantId) -> TokenPayload {
 
 #[test]
 fn full_protocol_flow() {
-    let (issuer, collector, store, pk) = setup();
+    let (issuer, collector, store, pk, tenant_id) = setup();
     let batch_id = QuestionBatchId::new();
-    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     // ── Step 1-2: Client creates token payload ──
@@ -73,7 +79,9 @@ fn full_protocol_flow() {
         question_batch_id: batch_id,
     };
     let employee = EmployeeId("employee-42".into());
-    let token_response = issuer.sign_token(&employee, &token_request).unwrap();
+    let token_response = issuer
+        .sign_token(&tenant_id, &employee, &token_request)
+        .unwrap();
 
     // ── Step 8-9: Client unblinds the signature ──
     let blind_sig = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
@@ -126,9 +134,8 @@ fn full_protocol_flow() {
 
 #[test]
 fn duplicate_submission_rejected() {
-    let (issuer, collector, _, pk) = setup();
+    let (issuer, collector, _, pk, tenant_id) = setup();
     let batch_id = QuestionBatchId::new();
-    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     let token = make_token(batch_id, tenant_id);
@@ -140,7 +147,9 @@ fn duplicate_submission_rejected() {
         question_batch_id: batch_id,
     };
     let employee = EmployeeId("employee-42".into());
-    let token_response = issuer.sign_token(&employee, &token_request).unwrap();
+    let token_response = issuer
+        .sign_token(&tenant_id, &employee, &token_request)
+        .unwrap();
     let blind_sig_val = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
     let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
@@ -163,9 +172,8 @@ fn duplicate_submission_rejected() {
 
 #[test]
 fn forged_signature_rejected() {
-    let (_, collector, _, _) = setup();
+    let (_, collector, _, _, tenant_id) = setup();
     let batch_id = QuestionBatchId::new();
-    let tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
     let token_bytes = token.to_bytes();
@@ -186,10 +194,9 @@ fn forged_signature_rejected() {
 
 #[test]
 fn wrong_batch_id_rejected() {
-    let (issuer, collector, _, pk) = setup();
+    let (issuer, collector, _, pk, tenant_id) = setup();
     let batch_id = QuestionBatchId::new();
     let wrong_batch_id = QuestionBatchId::new();
-    let tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
     let token_bytes = token.to_bytes();
@@ -200,7 +207,9 @@ fn wrong_batch_id_rejected() {
         question_batch_id: batch_id,
     };
     let employee = EmployeeId("employee-42".into());
-    let token_response = issuer.sign_token(&employee, &token_request).unwrap();
+    let token_response = issuer
+        .sign_token(&tenant_id, &employee, &token_request)
+        .unwrap();
     let blind_sig_val = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
     let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
@@ -221,9 +230,8 @@ fn wrong_batch_id_rejected() {
 
 #[test]
 fn wrong_tenant_id_rejected() {
-    let (issuer, collector, _, pk) = setup();
+    let (issuer, collector, _, pk, tenant_id) = setup();
     let batch_id = QuestionBatchId::new();
-    let tenant_id = TenantId::new();
     let wrong_tenant_id = TenantId::new();
 
     let token = make_token(batch_id, tenant_id);
@@ -235,7 +243,9 @@ fn wrong_tenant_id_rejected() {
         question_batch_id: batch_id,
     };
     let employee = EmployeeId("employee-42".into());
-    let token_response = issuer.sign_token(&employee, &token_request).unwrap();
+    let token_response = issuer
+        .sign_token(&tenant_id, &employee, &token_request)
+        .unwrap();
     let blind_sig_val = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
     let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 

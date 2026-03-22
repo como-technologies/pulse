@@ -30,6 +30,15 @@ pub struct Config {
     pub k_threshold: usize,
     /// Max tokens per employee per batch (`PULSE_MAX_TOKENS_PER_BATCH`, default `1`).
     pub max_tokens_per_batch: u32,
+    /// Default tenant ID (`PULSE_TENANT_ID`, default `00000000-0000-0000-0000-000000000001`).
+    ///
+    /// Fixed default UUID for dev reproducibility (same tenant_id across restarts).
+    pub tenant_id: String,
+    /// CMK provider (`PULSE_CMK_PROVIDER`, default `dev`).
+    ///
+    /// Supported values:
+    /// - `dev` — single fixed wrapping key for all tenants (not for production)
+    pub cmk_provider: String,
 }
 
 impl Config {
@@ -51,6 +60,8 @@ impl Config {
             max_tokens_per_batch: env_or("PULSE_MAX_TOKENS_PER_BATCH", "1")
                 .parse()
                 .expect("PULSE_MAX_TOKENS_PER_BATCH must be a positive integer"),
+            tenant_id: env_or("PULSE_TENANT_ID", "00000000-0000-0000-0000-000000000001"),
+            cmk_provider: env_or("PULSE_CMK_PROVIDER", "dev"),
         }
     }
 }

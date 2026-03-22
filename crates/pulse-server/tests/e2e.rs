@@ -19,11 +19,23 @@ use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 use pulse_server::dev_auth::DevAuthenticator;
 use pulse_server::dev_sampling::DevSamplingEngine;
+use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
 use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
-async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBatchId) {
+async fn start_test_servers() -> (
+    String,
+    String,
+    Arc<IdentityState>,
+    QuestionBatchId,
+    TenantId,
+    pulse_crypto::BrssPublicKey,
+) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
+    let tenant_id = TenantId::new();
+    let key_store = Arc::new(InMemoryTenantKeyStore::new());
+    key_store.register_tenant(tenant_id, kp.sk, kp.pk, KeyVersion(1));
+
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
 
@@ -37,14 +49,15 @@ async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBa
     let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(DevSamplingEngine::new(batch, 1));
 
     let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::with_sampling(kp.sk, KeyVersion(1), sampling_engine.clone()),
+        issuer: TokenIssuer::with_sampling(key_store.clone(), sampling_engine.clone()),
         authenticator: Arc::new(DevAuthenticator),
         session_store: Arc::new(InMemorySessionStore::new()),
         sampling_engine,
+        tenant_id,
     });
 
     let signal_state = Arc::new(SignalState {
-        collector: ResponseCollector::new(pk, ledger, store.clone()),
+        collector: ResponseCollector::new(key_store, ledger, store.clone()),
         store,
     });
 
@@ -74,14 +87,16 @@ async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBa
         format!("http://{signal_addr}"),
         identity_state,
         batch_id,
+        tenant_id,
+        pk,
     )
 }
 
 #[tokio::test]
 async fn full_http_flow() {
-    let (identity_url, signal_url, identity_state, batch_id) = start_test_servers().await;
+    let (identity_url, signal_url, _identity_state, batch_id, tenant_id, pk) =
+        start_test_servers().await;
     let client = reqwest::Client::new();
-    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     // 1. Authenticate to get a session token
@@ -123,7 +138,6 @@ async fn full_http_flow() {
     };
     let token_bytes = token.to_bytes();
 
-    let pk = identity_state.issuer.public_key();
     let blinding_result = blind_sig::blind(&pk, &token_bytes.0).unwrap();
 
     // 4. Request blind signature from Identity zone (requires auth, no employee_id in body)
@@ -208,7 +222,7 @@ async fn full_http_flow() {
 
 #[tokio::test]
 async fn questions_include_segment_vector() {
-    let (identity_url, _signal_url, _state, batch_id) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, batch_id, _tenant_id, _pk) = start_test_servers().await;
     let client = reqwest::Client::new();
 
     // Authenticate
@@ -244,7 +258,8 @@ async fn questions_include_segment_vector() {
 
 #[tokio::test]
 async fn sign_denied_frequency_cap() {
-    let (identity_url, _signal_url, identity_state, batch_id) = start_test_servers().await;
+    let (identity_url, _signal_url, _identity_state, batch_id, tenant_id, pk) =
+        start_test_servers().await;
     let client = reqwest::Client::new();
 
     // Authenticate
@@ -259,13 +274,11 @@ async fn sign_denied_frequency_cap() {
         .unwrap();
     let session_token = auth_resp["session_token"].as_str().unwrap();
 
-    let pk = identity_state.issuer.public_key();
-
     // First signing request — should succeed
     let token1 = TokenPayload {
         nonce: Nonce::random(),
         question_batch_id: batch_id,
-        tenant_id: TenantId::new(),
+        tenant_id,
         expiry: UnixTimestamp(u64::MAX),
         segment_vector: vec!["company".into()],
         attestation_class: AttestationClass::Personal,
@@ -290,7 +303,7 @@ async fn sign_denied_frequency_cap() {
     let token2 = TokenPayload {
         nonce: Nonce::random(),
         question_batch_id: batch_id,
-        tenant_id: TenantId::new(),
+        tenant_id,
         expiry: UnixTimestamp(u64::MAX),
         segment_vector: vec!["company".into()],
         attestation_class: AttestationClass::Personal,

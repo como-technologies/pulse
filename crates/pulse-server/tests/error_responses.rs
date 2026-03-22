@@ -19,11 +19,23 @@ use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 use pulse_server::dev_auth::DevAuthenticator;
 use pulse_server::dev_sampling::DevSamplingEngine;
+use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
 use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
-async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBatchId) {
+async fn start_test_servers() -> (
+    String,
+    String,
+    Arc<IdentityState>,
+    QuestionBatchId,
+    TenantId,
+    pulse_crypto::BrssPublicKey,
+) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
+    let tenant_id = TenantId::new();
+    let key_store = Arc::new(InMemoryTenantKeyStore::new());
+    key_store.register_tenant(tenant_id, kp.sk, kp.pk, KeyVersion(1));
+
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
 
@@ -37,14 +49,15 @@ async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBa
     let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(DevSamplingEngine::new(batch, 1));
 
     let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::with_sampling(kp.sk, KeyVersion(1), sampling_engine.clone()),
+        issuer: TokenIssuer::with_sampling(key_store.clone(), sampling_engine.clone()),
         authenticator: Arc::new(DevAuthenticator),
         session_store: Arc::new(InMemorySessionStore::new()),
         sampling_engine,
+        tenant_id,
     });
 
     let signal_state = Arc::new(SignalState {
-        collector: ResponseCollector::new(pk, ledger, store.clone()),
+        collector: ResponseCollector::new(key_store, ledger, store.clone()),
         store,
     });
 
@@ -73,13 +86,15 @@ async fn start_test_servers() -> (String, String, Arc<IdentityState>, QuestionBa
         format!("http://{signal_addr}"),
         identity_state,
         batch_id,
+        tenant_id,
+        pk,
     )
 }
 
 /// Authenticate and complete a token signing flow, returning data needed for submission.
 async fn sign_token_flow(
     identity_url: &str,
-    state: &IdentityState,
+    pk: &pulse_crypto::BrssPublicKey,
     batch_id: QuestionBatchId,
     tenant_id: TenantId,
 ) -> (
@@ -112,8 +127,7 @@ async fn sign_token_flow(
     };
     let token_bytes = token.to_bytes();
 
-    let pk = state.issuer.public_key();
-    let blinding_result = blind_sig::blind(&pk, &token_bytes.0).unwrap();
+    let blinding_result = blind_sig::blind(pk, &token_bytes.0).unwrap();
 
     let sign_resp: Value = client
         .post(format!("{identity_url}/token/sign"))
@@ -137,7 +151,7 @@ async fn sign_token_flow(
         .collect();
 
     let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
-    let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
+    let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
     let msg_randomizer = blinding_result.msg_randomizer.map(|r| r.0);
 
@@ -146,13 +160,12 @@ async fn sign_token_flow(
 
 #[tokio::test]
 async fn duplicate_submission_returns_422_with_error_code() {
-    let (identity_url, signal_url, state, batch_id) = start_test_servers().await;
+    let (identity_url, signal_url, _state, batch_id, tenant_id, pk) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
     let (token_bytes, sig, msg_randomizer) =
-        sign_token_flow(&identity_url, &state, batch_id, tenant_id).await;
+        sign_token_flow(&identity_url, &pk, batch_id, tenant_id).await;
 
     let payload = serde_json::json!({
         "token": token_bytes.0,
@@ -188,9 +201,8 @@ async fn duplicate_submission_returns_422_with_error_code() {
 
 #[tokio::test]
 async fn forged_signature_returns_422() {
-    let (_identity_url, signal_url, _state, batch_id) = start_test_servers().await;
+    let (_identity_url, signal_url, _state, batch_id, tenant_id, _pk) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let tenant_id = TenantId::new();
 
     let token = TokenPayload {
         nonce: Nonce::random(),
@@ -225,13 +237,12 @@ async fn forged_signature_returns_422() {
 
 #[tokio::test]
 async fn batch_mismatch_returns_422() {
-    let (identity_url, signal_url, state, batch_id) = start_test_servers().await;
+    let (identity_url, signal_url, _state, batch_id, tenant_id, pk) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let tenant_id = TenantId::new();
     let wrong_batch_id = QuestionBatchId::new();
 
     let (token_bytes, sig, msg_randomizer) =
-        sign_token_flow(&identity_url, &state, batch_id, tenant_id).await;
+        sign_token_flow(&identity_url, &pk, batch_id, tenant_id).await;
 
     let resp = client
         .post(format!("{signal_url}/response"))
@@ -255,7 +266,8 @@ async fn batch_mismatch_returns_422() {
 
 #[tokio::test]
 async fn empty_api_key_returns_401() {
-    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id, _tenant_id, _pk) =
+        start_test_servers().await;
     let client = reqwest::Client::new();
 
     let resp = client
@@ -273,7 +285,8 @@ async fn empty_api_key_returns_401() {
 
 #[tokio::test]
 async fn missing_auth_header_returns_401() {
-    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id, _tenant_id, _pk) =
+        start_test_servers().await;
     let client = reqwest::Client::new();
 
     // GET /question without Authorization header
@@ -290,7 +303,8 @@ async fn missing_auth_header_returns_401() {
 
 #[tokio::test]
 async fn invalid_session_token_returns_401() {
-    let (identity_url, _signal_url, _state, _batch_id) = start_test_servers().await;
+    let (identity_url, _signal_url, _state, _batch_id, _tenant_id, _pk) =
+        start_test_servers().await;
     let client = reqwest::Client::new();
 
     // POST /token/sign with a fake session token
@@ -312,9 +326,8 @@ async fn invalid_session_token_returns_401() {
 
 #[tokio::test]
 async fn error_response_has_consistent_structure() {
-    let (_identity_url, signal_url, _state, batch_id) = start_test_servers().await;
+    let (_identity_url, signal_url, _state, batch_id, tenant_id, _pk) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let tenant_id = TenantId::new();
 
     // Submit with forged signature to trigger an error
     let token = TokenPayload {

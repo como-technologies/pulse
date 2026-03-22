@@ -83,7 +83,10 @@ pub async fn sign_token(
         question_batch_id: req.question_batch_id,
     };
 
-    match state.issuer.sign_token(&employee.0, &token_request) {
+    match state
+        .issuer
+        .sign_token(&state.tenant_id, &employee.0, &token_request)
+    {
         Ok(resp) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -128,5 +131,8 @@ fn map_issuer_error(e: IssuerError) -> ApiError {
             }
         }
         IssuerError::SigningFailed(inner) => ApiError::SigningFailed(inner.to_string()),
+        IssuerError::TenantNotFound(msg) => {
+            ApiError::Unauthorized(format!("tenant not found: {msg}"))
+        }
     }
 }

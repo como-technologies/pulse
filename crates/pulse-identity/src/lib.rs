@@ -1,6 +1,7 @@
 mod auth;
 mod sampling;
 mod session;
+mod tenant_keys;
 mod token_issuer;
 
 pub use auth::{AuthError, Authenticator};
@@ -9,4 +10,5 @@ pub use sampling::{
     SamplingError, SegmentNode,
 };
 pub use session::{InMemorySessionStore, Session, SessionStore, SessionToken};
+pub use tenant_keys::{TenantKeyError, TenantSigningKeyStore};
 pub use token_issuer::{EmployeeId, IssuanceRecord, IssuerError, TokenIssuer};

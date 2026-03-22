@@ -50,6 +50,19 @@ pub fn generate_key() -> [u8; 32] {
     rand::random()
 }
 
+/// Wrap (encrypt) a 32-byte DEK under a wrapping key.
+pub fn wrap_key(wrapping_key: &[u8; 32], dek: &[u8; 32]) -> Result<Vec<u8>, AeadError> {
+    encrypt(wrapping_key, dek)
+}
+
+/// Unwrap (decrypt) a wrapped DEK, enforcing the 32-byte size constraint.
+pub fn unwrap_key(wrapping_key: &[u8; 32], wrapped: &[u8]) -> Result<[u8; 32], AeadError> {
+    let plaintext = decrypt(wrapping_key, wrapped)?;
+    plaintext
+        .try_into()
+        .map_err(|_| AeadError::InvalidKeyLength)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,6 +95,24 @@ mod tests {
         }
         let result = decrypt(&key, &encrypted);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn wrap_unwrap_key_round_trip() {
+        let wrapping_key = generate_key();
+        let dek = generate_key();
+        let wrapped = wrap_key(&wrapping_key, &dek).unwrap();
+        let unwrapped = unwrap_key(&wrapping_key, &wrapped).unwrap();
+        assert_eq!(unwrapped, dek);
+    }
+
+    #[test]
+    fn wrap_key_wrong_wrapping_key_fails() {
+        let wrapping_key1 = generate_key();
+        let wrapping_key2 = generate_key();
+        let dek = generate_key();
+        let wrapped = wrap_key(&wrapping_key1, &dek).unwrap();
+        assert!(unwrap_key(&wrapping_key2, &wrapped).is_err());
     }
 
     #[test]

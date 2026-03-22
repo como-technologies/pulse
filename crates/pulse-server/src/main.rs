@@ -16,17 +16,22 @@ use pulse_identity::{
     Authenticator, InMemorySessionStore, QuestionBatch, SamplingEngine, SessionStore, TokenIssuer,
 };
 use pulse_protocol::messages::ResponseType;
-use pulse_protocol::{KeyVersion, QuestionText, UnixTimestamp};
+use pulse_protocol::{QuestionText, TenantId, UnixTimestamp};
 use pulse_signal::{
     InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore, SpentTokenLedger,
 };
 
+use pulse_server::cmk::CmkProvider;
 use pulse_server::config::Config;
+use pulse_server::dek_store::InMemoryDekStore;
 use pulse_server::dev_auth::DevAuthenticator;
+use pulse_server::dev_cmk::DevCmkProvider;
 use pulse_server::dev_sampling::DevSamplingEngine;
-use pulse_server::key_store::load_or_generate_keypair;
+use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
+use pulse_server::encrypting_store::EncryptingResponseStore;
 use pulse_server::sqlite_ledger::SqliteLedger;
 use pulse_server::sqlite_store::SqliteStore;
+use pulse_server::tenant_provisioner::TenantProvisioner;
 use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
 #[derive(Clone)]
@@ -78,18 +83,38 @@ async fn main() -> anyhow::Result<()> {
         identity_addr = %config.identity_addr,
         signal_addr = %config.signal_addr,
         db_url = %config.db_url,
-        key_path = %config.key_path.display(),
         key_version = config.key_version,
         auth_provider = %config.auth_provider,
         sampling_provider = %config.sampling_provider,
+        cmk_provider = %config.cmk_provider,
+        tenant_id = %config.tenant_id,
         k_threshold = config.k_threshold,
         max_tokens_per_batch = config.max_tokens_per_batch,
         "Configuration loaded"
     );
 
-    // Load or generate blind-signature keypair
-    let kp = load_or_generate_keypair(&config.key_path)?;
-    let pk = kp.pk.clone();
+    // Parse default tenant ID from config
+    let default_tenant_id = TenantId::from_uuid(
+        uuid::Uuid::parse_str(&config.tenant_id).expect("PULSE_TENANT_ID must be a valid UUID"),
+    );
+
+    // Select CMK provider
+    let cmk: Arc<dyn CmkProvider> = match config.cmk_provider.as_str() {
+        "dev" => Arc::new(DevCmkProvider::new()),
+        other => {
+            anyhow::bail!("unsupported PULSE_CMK_PROVIDER: {other:?}; expected 'dev'");
+        }
+    };
+
+    // Create DEK store and tenant key store
+    let dek_store = Arc::new(InMemoryDekStore::new());
+    let tenant_key_store = Arc::new(InMemoryTenantKeyStore::new());
+
+    // Create tenant provisioner and auto-provision the default tenant
+    let provisioner =
+        TenantProvisioner::new(cmk.clone(), dek_store.clone(), tenant_key_store.clone());
+    provisioner.provision(default_tenant_id)?;
+    tracing::info!(tenant_id = %default_tenant_id, "auto-provisioned default tenant");
 
     // Select authentication provider
     let authenticator: Arc<dyn Authenticator> = match config.auth_provider.as_str() {
@@ -106,7 +131,7 @@ async fn main() -> anyhow::Result<()> {
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::new());
 
     // Select storage backend based on db_url
-    let (ledger, store): (Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>) =
+    let (ledger, base_store): (Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>) =
         match config.db_url.as_str() {
             "memory" => {
                 tracing::info!("Using in-memory storage (no persistence)");
@@ -127,6 +152,13 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
         };
+
+    // Wrap the base store with envelope encryption
+    let store: Arc<dyn ResponseStore> = Arc::new(EncryptingResponseStore::new(
+        base_store,
+        dek_store.clone(),
+        cmk.clone(),
+    ));
 
     // Select sampling engine provider
     let sampling_engine: Arc<dyn SamplingEngine> = match config.sampling_provider.as_str() {
@@ -151,19 +183,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Identity zone state — authentication, sessions, token issuance, sampling
     let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::with_sampling(
-            kp.sk,
-            KeyVersion(config.key_version),
-            sampling_engine.clone(),
-        ),
+        issuer: TokenIssuer::with_sampling(tenant_key_store.clone(), sampling_engine.clone()),
         authenticator,
         session_store,
         sampling_engine,
+        tenant_id: default_tenant_id,
     });
 
     // Signal zone state — anonymous response collection
     let signal_state = Arc::new(SignalState {
-        collector: ResponseCollector::new(pk, ledger, store.clone()),
+        collector: ResponseCollector::new(tenant_key_store, ledger, store.clone()),
         store,
     });
 

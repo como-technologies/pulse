@@ -1,18 +1,25 @@
 use std::sync::Arc;
 
 use pulse_identity::{Authenticator, SamplingEngine, SessionStore, TokenIssuer};
+use pulse_protocol::TenantId;
 use pulse_signal::{ResponseCollector, ResponseStore};
 
 pub mod auth_extractor;
+pub mod cmk;
 pub mod config;
+pub mod dek_store;
 pub mod dev_auth;
+pub mod dev_cmk;
 pub mod dev_sampling;
+pub mod dev_tenant_keys;
+pub mod encrypting_store;
 pub mod error;
 pub mod identity_routes;
 pub mod key_store;
 pub mod signal_routes;
 pub mod sqlite_ledger;
 pub mod sqlite_store;
+pub mod tenant_provisioner;
 
 /// Identity zone state. Holds authentication, session management, token issuance,
 /// and the sampling engine.
@@ -29,6 +36,8 @@ pub struct IdentityState {
     pub authenticator: Arc<dyn Authenticator>,
     pub session_store: Arc<dyn SessionStore>,
     pub sampling_engine: Arc<dyn SamplingEngine>,
+    /// Default tenant for this identity zone instance (dev simplification).
+    pub tenant_id: TenantId,
 }
 
 /// Signal zone state. Holds response collection and storage.

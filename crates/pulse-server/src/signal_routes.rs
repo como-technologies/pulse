@@ -5,7 +5,7 @@ use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
-use pulse_protocol::{QuestionBatchId, UnixTimestamp};
+use pulse_protocol::{QuestionBatchId, TenantId, UnixTimestamp};
 use pulse_signal::CollectorError;
 
 use crate::SignalState;
@@ -47,6 +47,7 @@ struct DebugResponse {
 #[derive(Serialize)]
 struct DebugResponseEntry {
     question_batch_id: QuestionBatchId,
+    tenant_id: TenantId,
     encrypted_blob_len: usize,
     received_at: UnixTimestamp,
 }
@@ -59,6 +60,7 @@ pub async fn debug_responses(State(state): State<Arc<SignalState>>) -> impl Into
             .iter()
             .map(|r| DebugResponseEntry {
                 question_batch_id: r.question_batch_id,
+                tenant_id: r.tenant_id,
                 encrypted_blob_len: r.encrypted_blob.0.len(),
                 received_at: r.received_at,
             })
