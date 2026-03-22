@@ -26,6 +26,15 @@ jobs:
       - name: Build book
         run: mdbook build docs
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build API docs
+        run: cargo doc --no-deps --workspace
+
+      - name: Copy API docs into book
+        run: cp -r target/doc docs/book/api
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
         with:
