@@ -17,7 +17,9 @@ pub enum AuthError {
 ///
 /// Implementations live in the composition root (`pulse-server`), not here —
 /// this crate only defines the interface.
+// ANCHOR: authenticator_trait
 #[async_trait::async_trait]
 pub trait Authenticator: Send + Sync {
     async fn authenticate(&self, credential: &str) -> Result<EmployeeId, AuthError>;
 }
+// ANCHOR_END: authenticator_trait

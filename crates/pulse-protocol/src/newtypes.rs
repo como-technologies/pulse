@@ -3,10 +3,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// ANCHOR: sensitive_trait
 /// Marker trait for types whose Debug and Display are intentionally redacted
 /// to prevent accidental logging of sensitive data (PII, cryptographic material,
 /// linkable identifiers). Access the inner value via `.0` for database/wire operations.
 pub trait Sensitive {}
+// ANCHOR_END: sensitive_trait
 
 /// Identifies a question batch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

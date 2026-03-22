@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use pulse_protocol::{EncryptedBlob, QuestionBatchId, UnixTimestamp};
 
+// ANCHOR: stored_response
 /// A stored anonymous response — encrypted blob with metadata.
 #[derive(Debug, Clone)]
 pub struct StoredResponse {
@@ -12,13 +13,16 @@ pub struct StoredResponse {
     /// Unix timestamp when the response was received.
     pub received_at: UnixTimestamp,
 }
+// ANCHOR_END: stored_response
 
+// ANCHOR: response_store
 /// Trait for persisting anonymous responses.
 pub trait ResponseStore: Send + Sync {
     fn store(&self, response: StoredResponse);
     fn count(&self) -> usize;
     fn list(&self) -> Vec<StoredResponse>;
 }
+// ANCHOR_END: response_store
 
 /// In-memory response store for development and testing.
 pub struct InMemoryStore {

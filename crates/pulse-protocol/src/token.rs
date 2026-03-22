@@ -17,6 +17,7 @@ pub enum AttestationClass {
     Hybrid,
 }
 
+// ANCHOR: token_payload
 /// Token payload that gets blind-signed by the Token Issuer.
 ///
 /// This is the message `T` from the anonymity protocol spec (Section 2.4).
@@ -39,6 +40,7 @@ pub struct TokenPayload {
     /// Which signing key version was used.
     pub key_version: KeyVersion,
 }
+// ANCHOR_END: token_payload
 
 impl TokenPayload {
     /// Serialize the token to bytes for blind signing.

@@ -55,6 +55,7 @@ pub enum SamplingError {
 
 // ── Trait ──
 
+// ANCHOR: sampling_engine_trait
 /// Sampling Engine — decides who gets which questions.
 ///
 /// Lives in the Identity zone. Knows WHO is assigned to WHAT question.
@@ -77,6 +78,7 @@ pub trait SamplingEngine: Send + Sync {
         question_batch_id: &QuestionBatchId,
     ) -> Result<(), SamplingError>;
 }
+// ANCHOR_END: sampling_engine_trait
 
 // ── K-Anonymity Coarsening ──
 

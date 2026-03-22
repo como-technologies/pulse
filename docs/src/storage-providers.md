@@ -40,14 +40,9 @@ The URI scheme is the extension point. Adding a new provider means adding a new 
 ### SpentTokenLedger
 
 ```rust
-pub trait SpentTokenLedger: Send + Sync {
-    fn check_and_spend(&self, hash: TokenHash) -> SpendResult;
-}
+{{#include ../../crates/pulse-signal/src/ledger.rs:spent_token_ledger}}
 
-pub enum SpendResult {
-    Accepted,      // Token was new, now recorded as spent
-    AlreadySpent,  // Token was already in the ledger
-}
+{{#include ../../crates/pulse-signal/src/ledger.rs:spend_result}}
 ```
 
 **Contract:**
@@ -59,17 +54,9 @@ pub enum SpendResult {
 ### ResponseStore
 
 ```rust
-pub trait ResponseStore: Send + Sync {
-    fn store(&self, response: StoredResponse);
-    fn count(&self) -> usize;
-    fn list(&self) -> Vec<StoredResponse>;
-}
+{{#include ../../crates/pulse-signal/src/store.rs:response_store}}
 
-pub struct StoredResponse {
-    pub encrypted_blob: EncryptedBlob,    // Opaque ciphertext (Vec<u8>)
-    pub question_batch_id: QuestionBatchId, // UUID
-    pub received_at: UnixTimestamp,         // u64 epoch seconds
-}
+{{#include ../../crates/pulse-signal/src/store.rs:stored_response}}
 ```
 
 **Contract:**

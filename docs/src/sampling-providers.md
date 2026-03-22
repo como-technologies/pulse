@@ -52,21 +52,7 @@ Client                           Identity Zone
 ## The SamplingEngine Trait
 
 ```rust
-pub trait SamplingEngine: Send + Sync {
-    /// Get question assignments for an employee.
-    /// Returns batches with coarsened segment vectors.
-    /// Excludes expired batches and batches where the frequency cap is hit.
-    fn assignments_for(&self, employee_id: &EmployeeId) -> Vec<SamplingDecision>;
-
-    /// Atomically authorize issuance AND record it.
-    /// Checks: assignment exists, frequency cap, batch not expired.
-    /// On Ok, the issuance count is incremented.
-    fn authorize_and_record_issuance(
-        &self,
-        employee_id: &EmployeeId,
-        question_batch_id: &QuestionBatchId,
-    ) -> Result<(), SamplingError>;
-}
+{{#include ../../crates/pulse-identity/src/sampling.rs:sampling_engine_trait}}
 ```
 
 ### Contract

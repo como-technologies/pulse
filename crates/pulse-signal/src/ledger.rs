@@ -16,6 +16,7 @@ impl TokenHash {
     }
 }
 
+// ANCHOR: spend_result
 /// Result of attempting to spend a token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpendResult {
@@ -24,13 +25,16 @@ pub enum SpendResult {
     /// Token was already spent (duplicate submission).
     AlreadySpent,
 }
+// ANCHOR_END: spend_result
 
+// ANCHOR: spent_token_ledger
 /// Append-only spent-token ledger.
 /// Tracks which tokens have been used to prevent replay/duplicate submission.
 pub trait SpentTokenLedger: Send + Sync {
     /// Atomically check if a token hash is already spent, and if not, mark it as spent.
     fn check_and_spend(&self, hash: TokenHash) -> SpendResult;
 }
+// ANCHOR_END: spent_token_ledger
 
 /// In-memory implementation of the spent-token ledger for development and testing.
 pub struct InMemoryLedger {

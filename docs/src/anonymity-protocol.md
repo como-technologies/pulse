@@ -107,17 +107,11 @@ The security of blind signatures rests on the mathematical properties of the bli
 
 ### 2.4 Token Structure
 
-The token payload `T` contains:
+The token payload `T` is defined in `pulse-protocol`:
 
-| Field | Purpose |
-|-------|---------|
-| `nonce` | Random unique value. Prevents collision between tokens. |
-| `question_batch_id` | Scopes the token to a specific question or campaign batch. |
-| `tenant_id` | Prevents cross-tenant token reuse. |
-| `expiry` | Bounds the validity window. Limits store-and-forward window and stale token utility. |
-| `segment_vector` | Coarsened org segment identifiers (see Section 4). Embedded at issuance time. |
-| `attestation_class` | Device class that obtained this token (personal, group, location, hybrid). |
-| `key_version` | Which signing key version was used. Supports key rotation. |
+```rust
+{{#include ../../crates/pulse-protocol/src/token.rs:token_payload}}
+```
 
 ### 2.5 Spent-Token Ledger
 
