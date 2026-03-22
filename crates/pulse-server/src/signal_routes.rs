@@ -7,12 +7,12 @@ use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::{QuestionBatchId, UnixTimestamp};
 use pulse_signal::CollectorError;
 
-use crate::AppState;
+use crate::SignalState;
 use crate::error::ApiError;
 
 /// Accept an anonymous response submission — NO authentication required.
 pub async fn submit_response(
-    State(state): State<Arc<AppState>>,
+    State(state): State<Arc<SignalState>>,
     Json(submit): Json<ResponseSubmit>,
 ) -> impl IntoResponse {
     match state.collector.accept(&submit) {
@@ -39,7 +39,7 @@ struct DebugResponseEntry {
     received_at: UnixTimestamp,
 }
 
-pub async fn debug_responses(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+pub async fn debug_responses(State(state): State<Arc<SignalState>>) -> impl IntoResponse {
     let stored = state.store.list();
     Json(DebugResponse {
         count: stored.len(),

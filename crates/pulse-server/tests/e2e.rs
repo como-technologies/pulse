@@ -11,35 +11,44 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 
 use pulse_crypto::{aead, blind_sig};
-use pulse_identity::TokenIssuer;
+use pulse_identity::{InMemorySessionStore, TokenIssuer};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
-use pulse_server::{AppState, identity_routes, signal_routes};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
-async fn start_test_servers() -> (String, String, Arc<AppState>) {
+use pulse_server::dev_auth::DevAuthenticator;
+use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
+
+async fn start_test_servers() -> (String, String, Arc<IdentityState>, Arc<SignalState>) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
     let question_batch_id = QuestionBatchId::new();
 
-    let state = Arc::new(AppState {
+    let identity_state = Arc::new(IdentityState {
         issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
+        authenticator: Arc::new(DevAuthenticator),
+        session_store: Arc::new(InMemorySessionStore::new()),
+        question_batch_id,
+    });
+
+    let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,
     });
 
     let identity_router = Router::new()
+        .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_question))
         .route("/token/sign", post(identity_routes::sign_token))
-        .with_state(state.clone());
+        .with_state(identity_state.clone());
 
     let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
         .route("/debug/responses", get(signal_routes::debug_responses))
-        .with_state(state.clone());
+        .with_state(signal_state.clone());
 
     // Bind to port 0 for random available ports
     let identity_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -54,21 +63,35 @@ async fn start_test_servers() -> (String, String, Arc<AppState>) {
     (
         format!("http://{identity_addr}"),
         format!("http://{signal_addr}"),
-        state,
+        identity_state,
+        signal_state,
     )
 }
 
 #[tokio::test]
 async fn full_http_flow() {
-    let (identity_url, signal_url, state) = start_test_servers().await;
+    let (identity_url, signal_url, identity_state, _signal_state) = start_test_servers().await;
     let client = reqwest::Client::new();
-    let batch_id = state.question_batch_id;
+    let batch_id = identity_state.question_batch_id;
     let tenant_id = TenantId::new();
     let encryption_key = aead::generate_key();
 
-    // 1. Get question from Identity zone
+    // 1. Authenticate to get a session token
+    let auth_resp: Value = client
+        .post(format!("{identity_url}/auth"))
+        .json(&serde_json::json!({"api_key": "employee-42"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let session_token = auth_resp["session_token"].as_str().unwrap();
+
+    // 2. Get question from Identity zone (requires auth)
     let question: Value = client
         .get(format!("{identity_url}/question"))
+        .header("Authorization", format!("Bearer {session_token}"))
         .send()
         .await
         .unwrap()
@@ -77,7 +100,7 @@ async fn full_http_flow() {
         .unwrap();
     assert_eq!(question["question_batch_id"], batch_id.0.to_string());
 
-    // 2. Create and blind a token
+    // 3. Create and blind a token
     let token = TokenPayload {
         nonce: Nonce::random(),
         question_batch_id: batch_id,
@@ -89,14 +112,14 @@ async fn full_http_flow() {
     };
     let token_bytes = token.to_bytes();
 
-    let pk = &state.collector.public_key();
-    let blinding_result = blind_sig::blind(pk, &token_bytes.0).unwrap();
+    let pk = identity_state.issuer.public_key();
+    let blinding_result = blind_sig::blind(&pk, &token_bytes.0).unwrap();
 
-    // 3. Request blind signature from Identity zone
+    // 4. Request blind signature from Identity zone (requires auth, no employee_id in body)
     let sign_resp: Value = client
         .post(format!("{identity_url}/token/sign"))
+        .header("Authorization", format!("Bearer {session_token}"))
         .json(&serde_json::json!({
-            "employee_id": "employee-42",
             "blinded_token": blinding_result.blind_message.0,
             "question_batch_id": batch_id.0,
         }))
@@ -114,14 +137,14 @@ async fn full_http_flow() {
         .map(|v| v.as_u64().unwrap() as u8)
         .collect();
 
-    // 4. Unblind the signature
+    // 5. Unblind the signature
     let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
-    let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
+    let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
-    // 5. Encrypt response
+    // 6. Encrypt response
     let encrypted_response = aead::encrypt(&encryption_key, b"5").unwrap();
 
-    // 6. Submit to Signal zone (different URL, NO auth)
+    // 7. Submit to Signal zone (different URL, NO auth)
     let submit_resp = client
         .post(format!("{signal_url}/response"))
         .json(&serde_json::json!({
@@ -141,7 +164,7 @@ async fn full_http_flow() {
     let body: Value = submit_resp.json().await.unwrap();
     assert_eq!(body["status"], "accepted");
 
-    // 7. Verify response is stored
+    // 8. Verify response is stored
     let debug: Value = client
         .get(format!("{signal_url}/debug/responses"))
         .send()
@@ -152,7 +175,7 @@ async fn full_http_flow() {
         .unwrap();
     assert_eq!(debug["count"], 1);
 
-    // 8. Duplicate submission should fail with 422 and structured error
+    // 9. Duplicate submission should fail with 422 and structured error
     let dup_resp = client
         .post(format!("{signal_url}/response"))
         .json(&serde_json::json!({

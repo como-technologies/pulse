@@ -20,6 +20,7 @@
 # Development
 
 - [Crate Structure](crate-structure.md)
+- [Authentication Providers](authentication.md)
 - [Error Handling and Tracing](error-handling-and-tracing.md)
 - [Verification Guide](verification.md)
 - [API Reference](api-reference.md)

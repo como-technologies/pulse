@@ -11,21 +11,29 @@ use serde_json::Value;
 use tokio::net::TcpListener;
 
 use pulse_crypto::{aead, blind_sig};
-use pulse_identity::TokenIssuer;
+use pulse_identity::{InMemorySessionStore, TokenIssuer};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, TenantId, UnixTimestamp};
-use pulse_server::{AppState, identity_routes, signal_routes};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
-async fn start_test_servers() -> (String, String, Arc<AppState>) {
+use pulse_server::dev_auth::DevAuthenticator;
+use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
+
+async fn start_test_servers() -> (String, String, Arc<IdentityState>) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
     let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
     let question_batch_id = QuestionBatchId::new();
 
-    let state = Arc::new(AppState {
+    let identity_state = Arc::new(IdentityState {
         issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
+        authenticator: Arc::new(DevAuthenticator),
+        session_store: Arc::new(InMemorySessionStore::new()),
+        question_batch_id,
+    });
+
+    let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,
@@ -35,12 +43,12 @@ async fn start_test_servers() -> (String, String, Arc<AppState>) {
         .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_question))
         .route("/token/sign", post(identity_routes::sign_token))
-        .with_state(state.clone());
+        .with_state(identity_state.clone());
 
     let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
         .route("/debug/responses", get(signal_routes::debug_responses))
-        .with_state(state.clone());
+        .with_state(signal_state);
 
     let identity_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let signal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -54,14 +62,14 @@ async fn start_test_servers() -> (String, String, Arc<AppState>) {
     (
         format!("http://{identity_addr}"),
         format!("http://{signal_addr}"),
-        state,
+        identity_state,
     )
 }
 
-/// Helper: complete a valid token signing flow, returning the data needed for submission.
+/// Authenticate and complete a token signing flow, returning data needed for submission.
 async fn sign_token_flow(
     identity_url: &str,
-    state: &AppState,
+    state: &IdentityState,
     batch_id: QuestionBatchId,
     tenant_id: TenantId,
 ) -> (
@@ -70,6 +78,18 @@ async fn sign_token_flow(
     Option<[u8; 32]>,
 ) {
     let client = reqwest::Client::new();
+
+    // Authenticate first
+    let auth_resp: Value = client
+        .post(format!("{identity_url}/auth"))
+        .json(&serde_json::json!({"api_key": "employee-42"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let session_token = auth_resp["session_token"].as_str().unwrap().to_string();
 
     let token = TokenPayload {
         nonce: Nonce::random(),
@@ -82,13 +102,13 @@ async fn sign_token_flow(
     };
     let token_bytes = token.to_bytes();
 
-    let pk = state.collector.public_key();
-    let blinding_result = blind_sig::blind(pk, &token_bytes.0).unwrap();
+    let pk = state.issuer.public_key();
+    let blinding_result = blind_sig::blind(&pk, &token_bytes.0).unwrap();
 
     let sign_resp: Value = client
         .post(format!("{identity_url}/token/sign"))
+        .header("Authorization", format!("Bearer {session_token}"))
         .json(&serde_json::json!({
-            "employee_id": "employee-42",
             "blinded_token": blinding_result.blind_message.0,
             "question_batch_id": batch_id.0,
         }))
@@ -107,7 +127,7 @@ async fn sign_token_flow(
         .collect();
 
     let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
-    let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
+    let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
     let msg_randomizer = blinding_result.msg_randomizer.map(|r| r.0);
 
@@ -242,6 +262,45 @@ async fn empty_api_key_returns_401() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["code"], "UNAUTHORIZED");
     assert!(!body["message"].as_str().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn missing_auth_header_returns_401() {
+    let (identity_url, _signal_url, _state) = start_test_servers().await;
+    let client = reqwest::Client::new();
+
+    // GET /question without Authorization header
+    let resp = client
+        .get(format!("{identity_url}/question"))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "UNAUTHORIZED");
+}
+
+#[tokio::test]
+async fn invalid_session_token_returns_401() {
+    let (identity_url, _signal_url, _state) = start_test_servers().await;
+    let client = reqwest::Client::new();
+
+    // POST /token/sign with a fake session token
+    let resp = client
+        .post(format!("{identity_url}/token/sign"))
+        .header("Authorization", "Bearer fake-token-value")
+        .json(&serde_json::json!({
+            "blinded_token": vec![0u8; 256],
+            "question_batch_id": QuestionBatchId::new().0,
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 401);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["code"], "UNAUTHORIZED");
 }
 
 #[tokio::test]

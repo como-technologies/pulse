@@ -16,6 +16,11 @@ pub struct Config {
     pub key_path: PathBuf,
     /// Current key version (`PULSE_KEY_VERSION`, default `1`).
     pub key_version: u32,
+    /// Authentication provider (`PULSE_AUTH_PROVIDER`, default `dev`).
+    ///
+    /// Supported values:
+    /// - `dev` — accepts any non-empty credential as the employee ID
+    pub auth_provider: String,
 }
 
 impl Config {
@@ -29,6 +34,7 @@ impl Config {
             key_version: env_or("PULSE_KEY_VERSION", "1")
                 .parse()
                 .expect("PULSE_KEY_VERSION must be a positive integer"),
+            auth_provider: env_or("PULSE_AUTH_PROVIDER", "dev"),
         }
     }
 }

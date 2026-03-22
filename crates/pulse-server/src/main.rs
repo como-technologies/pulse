@@ -12,17 +12,18 @@ use tower_http::{
 };
 use tracing_subscriber::EnvFilter;
 
-use pulse_identity::TokenIssuer;
+use pulse_identity::{Authenticator, InMemorySessionStore, SessionStore, TokenIssuer};
 use pulse_protocol::KeyVersion;
 use pulse_signal::{
     InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore, SpentTokenLedger,
 };
 
 use pulse_server::config::Config;
+use pulse_server::dev_auth::DevAuthenticator;
 use pulse_server::key_store::load_or_generate_keypair;
 use pulse_server::sqlite_ledger::SqliteLedger;
 use pulse_server::sqlite_store::SqliteStore;
-use pulse_server::{AppState, identity_routes, signal_routes};
+use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
 #[derive(Clone)]
 struct MakeRequestUuid;
@@ -75,12 +76,27 @@ async fn main() -> anyhow::Result<()> {
         db_url = %config.db_url,
         key_path = %config.key_path.display(),
         key_version = config.key_version,
+        auth_provider = %config.auth_provider,
         "Configuration loaded"
     );
 
     // Load or generate blind-signature keypair
     let kp = load_or_generate_keypair(&config.key_path)?;
     let pk = kp.pk.clone();
+
+    // Select authentication provider
+    let authenticator: Arc<dyn Authenticator> = match config.auth_provider.as_str() {
+        "dev" => {
+            tracing::info!("Using dev authenticator (accepts any non-empty credential)");
+            Arc::new(DevAuthenticator)
+        }
+        other => {
+            anyhow::bail!("unsupported PULSE_AUTH_PROVIDER: {other:?}; expected 'dev'");
+        }
+    };
+
+    // Session store (in-memory — sessions don't need to survive restart)
+    let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::new());
 
     // Select storage backend based on db_url
     let (ledger, store): (Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>) =
@@ -107,8 +123,16 @@ async fn main() -> anyhow::Result<()> {
 
     let question_batch_id = pulse_protocol::QuestionBatchId::new();
 
-    let state = Arc::new(AppState {
+    // Identity zone state — authentication, sessions, token issuance
+    let identity_state = Arc::new(IdentityState {
         issuer: TokenIssuer::new(kp.sk, KeyVersion(config.key_version)),
+        authenticator,
+        session_store,
+        question_batch_id,
+    });
+
+    // Signal zone state — anonymous response collection
+    let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,
@@ -119,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_question))
         .route("/token/sign", post(identity_routes::sign_token))
-        .with_state(state.clone())
+        .with_state(identity_state)
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(trace_layer("identity"))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
@@ -128,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
     let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
         .route("/debug/responses", get(signal_routes::debug_responses))
-        .with_state(state.clone())
+        .with_state(signal_state)
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(trace_layer("signal"))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));

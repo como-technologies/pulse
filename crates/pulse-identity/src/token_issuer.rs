@@ -69,6 +69,13 @@ impl TokenIssuer {
         }
     }
 
+    /// Derive the public verification key from the signing key.
+    pub fn public_key(&self) -> pulse_crypto::BrssPublicKey {
+        self.secret_key
+            .public_key()
+            .expect("public key derivation from valid secret key should never fail")
+    }
+
     /// Process a token signing request from an authenticated employee.
     ///
     /// The `employee_id` comes from the authenticated session (Identity zone).

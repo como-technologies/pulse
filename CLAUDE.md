@@ -6,6 +6,17 @@
 
 **Never add `pulse-identity` as a dependency of `pulse-signal` or vice versa.** The Cargo dependency graph is the enforcement mechanism — cross-zone imports must remain a compile error.
 
+### Composition-Root State Split
+
+In `pulse-server` (the composition root that sees both zones), state is split into two separate types:
+
+- **`IdentityState`** — holds `TokenIssuer`, `Authenticator`, `SessionStore`. Used by identity-zone route handlers.
+- **`SignalState`** — holds `ResponseCollector`, `ResponseStore`. Used by signal-zone route handlers.
+
+This prevents auth components from leaking into the Signal zone at the composition-root level. The `AuthenticatedEmployee` extractor compiles only against `IdentityState` — using it in a signal-zone handler is a compile error.
+
+**Never merge these back into a single shared state type.** The split is the second layer of enforcement (after the Cargo graph) that keeps zones isolated.
+
 The only shared artifacts between zones are:
 - `pulse-crypto` — cryptographic primitives (used by both)
 - `pulse-protocol` — wire types (used by both)
@@ -26,7 +37,7 @@ All domain concepts use newtype wrappers. Bare primitives (`u64`, `Vec<u8>`, `St
 
 Types containing PII or cryptographic material that could link identity to signal must implement the `Sensitive` marker trait (defined in `pulse-protocol/src/newtypes.rs`) and override `Debug` and `Display` to output `[REDACTED]`.
 
-- **PII types**: `EmployeeId`, `ApiKey` — redact Debug + Display
+- **PII types**: `EmployeeId`, `SessionToken` — redact Debug + Display
 - **Linkable crypto material**: `BlindedToken`, `BlindSig`, `TokenBytes`, `SignatureBytes`, `EncryptedBlob` — redact Debug + Display
 - **Safe metadata** (keep normal Debug/Display): `QuestionBatchId`, `TenantId`, `KeyVersion`, `UnixTimestamp`, `QuestionText`, `SegmentLabel`
 - Access inner values via `.0` for database/wire operations

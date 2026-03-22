@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 pulse-crypto = { path = "../pulse-crypto" }
 pulse-protocol = { path = "../pulse-protocol" }
+async-trait.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -8,6 +8,7 @@ pulse-crypto = { path = "../pulse-crypto" }
 pulse-protocol = { path = "../pulse-protocol" }
 pulse-identity = { path = "../pulse-identity" }
 pulse-signal = { path = "../pulse-signal" }
+async-trait.workspace = true
 axum.workspace = true
 tokio.workspace = true
 tower.workspace = true
