@@ -1493,6 +1493,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulse-relay"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "rand 0.9.2",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "pulse-server"
 version = "0.1.0"
 dependencies = [

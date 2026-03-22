@@ -23,6 +23,7 @@
 - [Authentication Providers](authentication.md)
 - [Storage Providers](storage-providers.md)
 - [Sampling Engine Providers](sampling-providers.md)
+- [Anonymizing Relay](relay.md)
 - [Error Handling and Tracing](error-handling-and-tracing.md)
 - [Verification Guide](verification.md)
 - [API Reference](api-reference.md)

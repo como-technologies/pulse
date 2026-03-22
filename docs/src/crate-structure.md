@@ -1,6 +1,6 @@
 # Crate Structure
 
-Pulse is a Cargo workspace with five crates, layered by responsibility.
+Pulse is a Cargo workspace with six crates, layered by responsibility.
 
 ```
 crates/
@@ -8,7 +8,8 @@ crates/
   pulse-protocol/    Wire types and message definitions
   pulse-identity/    Identity zone domain logic
   pulse-signal/      Signal zone domain logic
-  pulse-server/      HTTP layer (Axum)
+  pulse-server/      HTTP layer (Axum) — composition root
+  pulse-relay/       Anonymizing relay (standalone binary)
 ```
 
 ## pulse-crypto
@@ -48,10 +49,16 @@ Axum HTTP server and composition root. Exposes the Identity zone (port 8001) and
 - Config-driven provider selection via environment variables
 - Auth extractor, error mapping, request tracing
 
+## pulse-relay
+
+Standalone anonymizing relay binary. Transport-level anonymizer between clients and the Signal zone. Strips source IP, timing metadata, and client-fingerprinting headers. Batches and shuffles requests for timing decorrelation.
+
+No domain crate dependencies -- treats all payloads as opaque bytes. See the [Anonymizing Relay](relay.md) guide.
+
 ## Dependency Graph
 
 ```
-pulse-server
+pulse-server                 pulse-relay (standalone, no domain deps)
   -> pulse-identity
   |    -> pulse-protocol
   |    -> pulse-crypto

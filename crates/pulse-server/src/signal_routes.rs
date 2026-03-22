@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 
@@ -11,10 +12,21 @@ use crate::SignalState;
 use crate::error::ApiError;
 
 /// Accept an anonymous response submission — NO authentication required.
+///
+/// Accepts the body as raw bytes and deserializes internally, making the
+/// endpoint content-type-agnostic. This allows the anonymizing relay to
+/// forward opaque bytes without needing to set a specific Content-Type.
 pub async fn submit_response(
     State(state): State<Arc<SignalState>>,
-    Json(submit): Json<ResponseSubmit>,
+    body: Bytes,
 ) -> impl IntoResponse {
+    let submit: ResponseSubmit = match serde_json::from_slice(&body) {
+        Ok(s) => s,
+        Err(_) => {
+            return ApiError::BadRequest("malformed request body".to_string()).into_response();
+        }
+    };
+
     match state.collector.accept(&submit) {
         Ok(()) => (
             StatusCode::OK,
