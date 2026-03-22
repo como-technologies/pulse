@@ -10,9 +10,19 @@ pub mod signal_routes;
 
 /// Shared application state across both zones.
 ///
-/// In a production system, the Identity zone and Signal zone would NOT share
-/// state directly. The only shared artifact is the Token Issuer's public key.
-/// For Slice 0, we keep them in one process for simplicity.
+/// In production, Identity and Signal zones deploy independently with separate
+/// state. We co-locate them here because the Cargo dependency graph already
+/// enforces the real safety boundary — no route handler can accidentally cross
+/// zones since the types won't resolve. This struct is purely an ergonomic
+/// convenience that avoids duplicating routers, middleware, and test harness
+/// setup while features are still being built out.
+///
+/// Split into `IdentityState` / `SignalState` in separate binaries when:
+/// - Zones need independent deployment (separate containers/ports)
+/// - Zone-specific middleware makes the single-app shape awkward
+///
+/// Identity zone: [`TokenIssuer`]
+/// Signal zone: [`ResponseCollector`], [`InMemoryStore`]
 pub struct AppState {
     pub issuer: TokenIssuer,
     pub collector: ResponseCollector,
