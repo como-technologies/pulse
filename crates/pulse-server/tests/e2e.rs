@@ -23,7 +23,7 @@ async fn start_test_servers() -> (String, String, Arc<AppState>) {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
     let ledger = Arc::new(InMemoryLedger::new());
-    let store = Arc::new(InMemoryStore::new());
+    let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
     let question_batch_id = QuestionBatchId::from_uuid(Uuid::new_v4());
 
     let state = Arc::new(AppState {

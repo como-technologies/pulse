@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use pulse_identity::TokenIssuer;
 use pulse_protocol::QuestionBatchId;
-use pulse_signal::{InMemoryStore, ResponseCollector};
+use pulse_signal::{ResponseCollector, ResponseStore};
 
+pub mod config;
 pub mod error;
 pub mod identity_routes;
+pub mod key_store;
 pub mod signal_routes;
+pub mod sqlite_ledger;
+pub mod sqlite_store;
 
 /// Shared application state across both zones.
 ///
@@ -22,10 +26,10 @@ pub mod signal_routes;
 /// - Zone-specific middleware makes the single-app shape awkward
 ///
 /// Identity zone: [`TokenIssuer`]
-/// Signal zone: [`ResponseCollector`], [`InMemoryStore`]
+/// Signal zone: [`ResponseCollector`], storage backend (via [`ResponseStore`] trait)
 pub struct AppState {
     pub issuer: TokenIssuer,
     pub collector: ResponseCollector,
-    pub store: Arc<InMemoryStore>,
+    pub store: Arc<dyn ResponseStore>,
     pub question_batch_id: QuestionBatchId,
 }

@@ -17,7 +17,7 @@ use pulse_protocol::{
     BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
     UnixTimestamp,
 };
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use uuid::Uuid;
 
 /// Show first and last 4 bytes of a byte slice as hex.
@@ -65,7 +65,7 @@ fn main() {
     println!();
 
     let ledger = Arc::new(InMemoryLedger::new());
-    let store = Arc::new(InMemoryStore::new());
+    let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
     let issuer = TokenIssuer::new(kp.sk, KeyVersion(1));
     let collector = ResponseCollector::new(kp.pk, ledger, store.clone());
     println!("Created Identity zone (TokenIssuer)");

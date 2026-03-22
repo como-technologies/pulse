@@ -12,11 +12,16 @@ use tower_http::{
 };
 use tracing_subscriber::EnvFilter;
 
-use pulse_crypto::blind_sig;
 use pulse_identity::TokenIssuer;
-use pulse_protocol::{KeyVersion, QuestionBatchId};
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
+use pulse_protocol::KeyVersion;
+use pulse_signal::{
+    InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore, SpentTokenLedger,
+};
 
+use pulse_server::config::Config;
+use pulse_server::key_store::load_or_generate_keypair;
+use pulse_server::sqlite_ledger::SqliteLedger;
+use pulse_server::sqlite_store::SqliteStore;
 use pulse_server::{AppState, identity_routes, signal_routes};
 
 #[derive(Clone)]
@@ -63,25 +68,53 @@ async fn main() -> anyhow::Result<()> {
         .with_target(true)
         .init();
 
-    // Generate RSA keypair for blind signatures
-    tracing::info!("Generating RSA-2048 blind signature keypair...");
-    let kp = blind_sig::generate_keypair()?;
-    let pk = kp.pk.clone();
-    tracing::info!("Keypair generated.");
+    let config = Config::from_env();
+    tracing::info!(
+        identity_addr = %config.identity_addr,
+        signal_addr = %config.signal_addr,
+        db_url = %config.db_url,
+        key_path = %config.key_path.display(),
+        key_version = config.key_version,
+        "Configuration loaded"
+    );
 
-    // Shared infrastructure (in-memory for Slice 0)
-    let ledger = Arc::new(InMemoryLedger::new());
-    let store = Arc::new(InMemoryStore::new());
-    let question_batch_id = QuestionBatchId::new();
+    // Load or generate blind-signature keypair
+    let kp = load_or_generate_keypair(&config.key_path)?;
+    let pk = kp.pk.clone();
+
+    // Select storage backend based on db_url
+    let (ledger, store): (Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>) =
+        match config.db_url.as_str() {
+            "memory" => {
+                tracing::info!("Using in-memory storage (no persistence)");
+                let ledger = Arc::new(InMemoryLedger::new());
+                let store = Arc::new(InMemoryStore::new());
+                (ledger, store)
+            }
+            url if url.starts_with("sqlite:") => {
+                let path = std::path::Path::new(&url["sqlite:".len()..]);
+                tracing::info!(path = %path.display(), "Using SQLite storage");
+                let ledger = Arc::new(SqliteLedger::open(path)?);
+                let store = Arc::new(SqliteStore::open(path)?);
+                (ledger, store)
+            }
+            other => {
+                anyhow::bail!(
+                    "unsupported PULSE_DB_URL: {other:?}; expected 'memory' or 'sqlite:<path>'"
+                );
+            }
+        };
+
+    let question_batch_id = pulse_protocol::QuestionBatchId::new();
 
     let state = Arc::new(AppState {
-        issuer: TokenIssuer::new(kp.sk, KeyVersion(1)),
+        issuer: TokenIssuer::new(kp.sk, KeyVersion(config.key_version)),
         collector: ResponseCollector::new(pk, ledger, store.clone()),
         store,
         question_batch_id,
     });
 
-    // Identity zone router (port 8001) — authenticated endpoints
+    // Identity zone router — authenticated endpoints
     let identity_router = Router::new()
         .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_question))
@@ -91,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(trace_layer("identity"))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
 
-    // Signal zone router (port 8002) — anonymous endpoints (NO auth)
+    // Signal zone router — anonymous endpoints (NO auth)
     let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
         .route("/debug/responses", get(signal_routes::debug_responses))
@@ -100,12 +133,12 @@ async fn main() -> anyhow::Result<()> {
         .layer(trace_layer("signal"))
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
 
-    tracing::info!("Identity zone listening on port 8001");
-    tracing::info!("Signal zone listening on port 8002");
+    tracing::info!("Identity zone listening on {}", config.identity_addr);
+    tracing::info!("Signal zone listening on {}", config.signal_addr);
     tracing::info!("Question batch ID: {question_batch_id}");
 
-    let identity_listener = TcpListener::bind("127.0.0.1:8001").await?;
-    let signal_listener = TcpListener::bind("127.0.0.1:8002").await?;
+    let identity_listener = TcpListener::bind(&config.identity_addr).await?;
+    let signal_listener = TcpListener::bind(&config.signal_addr).await?;
 
     tokio::try_join!(
         axum::serve(identity_listener, identity_router).into_future(),

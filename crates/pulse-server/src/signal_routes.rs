@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::{QuestionBatchId, UnixTimestamp};
-use pulse_signal::{CollectorError, ResponseStore};
+use pulse_signal::CollectorError;
 
 use crate::AppState;
 use crate::error::ApiError;

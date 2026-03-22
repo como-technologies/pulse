@@ -23,13 +23,13 @@ use pulse_protocol::{
     BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, SignatureBytes, TenantId,
     UnixTimestamp,
 };
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 use uuid::Uuid;
 
 fn setup() -> (
     TokenIssuer,
     ResponseCollector,
-    Arc<InMemoryStore>,
+    Arc<dyn pulse_signal::ResponseStore>,
     pulse_crypto::BrssPublicKey,
 ) {
     let kp = blind_sig::generate_keypair().unwrap();
