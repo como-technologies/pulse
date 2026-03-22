@@ -8,6 +8,7 @@ pub enum CmkError {
     UnwrapFailed(String),
 }
 
+// ANCHOR: cmk_provider_trait
 /// Customer-Managed Key provider — wraps/unwraps DEKs.
 ///
 /// The CMK itself is held by the tenant, never stored by Pulse.
@@ -21,3 +22,4 @@ pub trait CmkProvider: Send + Sync {
     /// Unwrap (decrypt) a wrapped DEK using the tenant's CMK.
     fn unwrap_dek(&self, tenant_id: &TenantId, wrapped_dek: &[u8]) -> Result<[u8; 32], CmkError>;
 }
+// ANCHOR_END: cmk_provider_trait

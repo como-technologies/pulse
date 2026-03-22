@@ -19,8 +19,12 @@ use pulse_protocol::{
     BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, QuestionText, SignatureBytes,
     TenantId, UnixTimestamp,
 };
+use pulse_server::cmk::CmkProvider;
+use pulse_server::dek_store::{DekDomain, DekStore, InMemoryDekStore};
+use pulse_server::dev_cmk::DevCmkProvider;
 use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
+use pulse_server::encrypting_store::EncryptingResponseStore;
+use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore};
 
 /// Show first and last 4 bytes of a byte slice as hex.
 fn hex_preview(bytes: &[u8]) -> String {
@@ -585,6 +589,91 @@ fn main() {
     println!("  Without the Token Issuer's secret key, an attacker cannot");
     println!("  produce a valid blind signature. Ballot stuffing is impossible.");
 
+    // ── ENVELOPE ENCRYPTION ─────────────────────────────────
+
+    println!();
+    println!(
+        "\
+========================================================
+  MULTI-TENANCY: Envelope Encryption
+========================================================"
+    );
+    println!();
+    println!("Pulse uses two-tier envelope encryption so the platform");
+    println!("operator never sees plaintext data.");
+    println!();
+
+    let cmk: Arc<dyn CmkProvider> = Arc::new(DevCmkProvider::new());
+    let dek_store: Arc<dyn DekStore> = Arc::new(InMemoryDekStore::new());
+
+    // Generate and wrap a DEK for this tenant
+    let dek = aead::generate_key();
+    let wrapped_dek = cmk.wrap_dek(&tenant_id, &dek).expect("wrap failed");
+    dek_store.store_wrapped_dek(&tenant_id, DekDomain::Responses, wrapped_dek);
+
+    println!("  Generated DEK-responses for tenant {tenant_id}");
+    println!("  Wrapped DEK under CMK (tenant-held master key)");
+    println!("  Only the wrapped DEK is stored — plaintext DEK discarded");
+    println!();
+
+    // Create an encrypting store that wraps the base store
+    let base_store: Arc<dyn ResponseStore> = Arc::new(InMemoryStore::new());
+    let encrypting_store =
+        EncryptingResponseStore::new(base_store.clone(), dek_store.clone(), cmk.clone());
+
+    // Store a response through the encrypting store
+    let test_blob = EncryptedBlob(b"sensitive-response-data".to_vec());
+    encrypting_store.store(pulse_signal::StoredResponse {
+        encrypted_blob: test_blob.clone(),
+        question_batch_id: batch_id,
+        tenant_id,
+        received_at: UnixTimestamp::now(),
+    });
+
+    // The base store holds DIFFERENT bytes (doubly encrypted)
+    let raw = base_store.list();
+    assert_ne!(raw[0].encrypted_blob.0, test_blob.0);
+    println!("  Stored response through EncryptingResponseStore");
+    println!(
+        "  Inner store blob: {} bytes (doubly encrypted)",
+        raw[0].encrypted_blob.0.len()
+    );
+    println!("  Original blob:    {} bytes", test_blob.0.len());
+    println!("  Operator sees only ciphertext — zero knowledge");
+    println!();
+
+    // Reading through the encrypting store decrypts transparently
+    let decrypted_list = encrypting_store.list();
+    assert_eq!(decrypted_list[0].encrypted_blob.0, test_blob.0);
+    println!("  Reading through EncryptingResponseStore: original blob recovered");
+
+    // ── CRYPTO-SHREDDING ──────────────────────────────────────
+
+    println!();
+    println!(
+        "\
+========================================================
+  MULTI-TENANCY: Crypto-Shredding
+========================================================"
+    );
+    println!();
+    println!("--- Tenant deletes their CMK (or we delete wrapped DEKs) ---");
+    println!();
+
+    dek_store.delete_tenant(&tenant_id);
+    println!("  Deleted wrapped DEKs for tenant {tenant_id}");
+    println!();
+
+    let shredded = encrypting_store.list();
+    // The blob is returned as-is (still encrypted) — graceful degradation
+    assert_eq!(shredded[0].encrypted_blob.0, raw[0].encrypted_blob.0);
+    println!("  Attempting to read stored response...");
+    println!("  DEK unwrap failed — blob returned still encrypted");
+    println!("  Data is cryptographic garbage without the DEK");
+    println!();
+    println!("  This is crypto-shredding: delete the key, and all data");
+    println!("  encrypted under it becomes permanently irrecoverable.");
+
     // ── SUMMARY ────────────────────────────────────────────────
 
     println!();
@@ -615,6 +704,13 @@ fn main() {
 
   6. K-ANONYMOUS: Segment labels are coarsened at issuance time so
                   no group smaller than k is identifiable in responses.
+
+  7. TENANT-ISOLATED: Per-tenant blind-sig keypairs prevent cross-tenant
+                      token reuse. Envelope encryption under tenant DEKs
+                      ensures operator zero-knowledge.
+
+  8. CRYPTO-SHREDDABLE: Deleting a tenant's keys makes all their data
+                        permanently irrecoverable by design.
 
   Run the full test suite to verify all properties:
     cargo test

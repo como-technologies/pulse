@@ -64,21 +64,8 @@ Each tenant has independent DEKs for each domain (`DekDomain::Responses`, `DekDo
 The `CmkProvider` trait is the interface between Pulse and the tenant's key management system:
 
 ```rust
-pub trait CmkProvider: Send + Sync {
-    /// Wrap (encrypt) a 32-byte DEK under the tenant's CMK.
-    fn wrap_dek(
-        &self,
-        tenant_id: &TenantId,
-        plaintext_dek: &[u8; 32],
-    ) -> Result<Vec<u8>, CmkError>;
-
-    /// Unwrap (decrypt) a wrapped DEK using the tenant's CMK.
-    fn unwrap_dek(
-        &self,
-        tenant_id: &TenantId,
-        wrapped_dek: &[u8],
-    ) -> Result<[u8; 32], CmkError>;
-}
+{{#include ../../crates/pulse-server/src/cmk.rs:cmk_provider_trait}}
+```
 ```
 
 **Contract:**

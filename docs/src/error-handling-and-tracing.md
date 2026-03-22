@@ -101,8 +101,9 @@ pub fn sign_token(
 Each domain crate defines a `thiserror` error enum:
 
 - `pulse-crypto`: `BlindSigError`, `AeadError`
-- `pulse-identity`: `IssuerError` (wraps `TokenDeniedReason` and `BlindSigError`), `AuthError` (wraps `InvalidCredentials` and `ProviderError`), `SamplingError` (wraps `NotAssigned`, `FrequencyCapExceeded`, `BatchExpired`)
-- `pulse-signal`: `CollectorError` (wraps `RejectReason`)
+- `pulse-identity`: `IssuerError` (wraps `TokenDeniedReason`, `BlindSigError`, `TenantNotFound`), `AuthError` (wraps `InvalidCredentials`, `ProviderError`), `SamplingError` (wraps `NotAssigned`, `FrequencyCapExceeded`, `BatchExpired`), `TenantKeyError` (wraps `TenantNotFound`, `KeyUnavailable`)
+- `pulse-signal`: `CollectorError` (wraps `RejectReason`), `TenantKeyError` (wraps `TenantNotFound`, `KeyVersionNotFound`)
+- `pulse-server`: `CmkError` (wraps `WrapFailed`, `UnwrapFailed`)
 
 All public functions return `Result<T, CrateError>`. Domain crates do not log — the caller decides the appropriate log level.
 

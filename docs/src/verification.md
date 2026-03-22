@@ -144,6 +144,16 @@ cargo test --test error_responses  # structured error responses
 
 **Machine-readable codes** — Error codes like `RESPONSE_TOKEN_ALREADY_SPENT`, `RESPONSE_INVALID_SIGNATURE`, `UNAUTHORIZED` are stable and suitable for programmatic consumption.
 
+### Multi-tenancy tests (multi_tenancy.rs, unit tests)
+
+**Per-tenant keypair isolation** — Tokens signed by Tenant A's key are rejected when verified against Tenant B's key. Cross-tenant token reuse is cryptographically impossible.
+
+**Envelope encryption** — Response blobs are encrypted under the tenant's DEK before storage. The inner store holds ciphertext different from the original blob. Decryption via `list()` returns the original.
+
+**Crypto-shredding** — Deleting a tenant's wrapped DEKs makes stored response blobs permanently unreadable. The `EncryptingResponseStore` returns them as-is (still encrypted) rather than crashing.
+
+**Tenant provisioning** — `TenantProvisioner` generates DEKs, wraps them under the CMK, generates blind-sig keypairs, and registers everything atomically.
+
 ### Tracing tests (response_collector)
 
 **Observability verification** — Successful response acceptance logs "response accepted". Forged signatures do not log success. Debug-level validation steps are emitted for each stage of the pipeline.

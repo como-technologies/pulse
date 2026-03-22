@@ -47,8 +47,9 @@ Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `
 
 Axum HTTP server and composition root. Exposes the Identity zone (port 8001) and Signal zone (port 8002) on separate listeners. Provides concrete implementations of domain traits:
 
-- Dev providers: `DevAuthenticator`, `DevSamplingEngine` (for local development)
+- Dev providers: `DevAuthenticator`, `DevSamplingEngine`, `DevCmkProvider`, `InMemoryTenantKeyStore` (for local development)
 - SQLite adapters: `SqliteLedger`, `SqliteStore` (for persistent storage)
+- Multi-tenancy infrastructure: `CmkProvider` trait, `DekStore` trait, `EncryptingResponseStore` decorator, `TenantProvisioner`
 - Config-driven provider selection via environment variables
 - Auth extractor, error mapping, request tracing
 

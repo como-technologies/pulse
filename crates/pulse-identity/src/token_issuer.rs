@@ -49,7 +49,7 @@ pub enum IssuerError {
     #[error("blind signing failed: {0}")]
     SigningFailed(#[from] pulse_crypto::blind_sig::BlindSigError),
     #[error("tenant not found: {0}")]
-    TenantNotFound(String),
+    TenantNotFound(TenantId),
 }
 
 /// Token Issuer — signs blinded tokens for authorized employees.
@@ -108,8 +108,8 @@ impl TokenIssuer {
         // Look up the tenant's signing key
         let (secret_key, key_version) =
             self.key_store.signing_key(tenant_id).map_err(|e| match e {
-                TenantKeyError::TenantNotFound(id) => IssuerError::TenantNotFound(id.0.to_string()),
-                TenantKeyError::KeyUnavailable(msg) => IssuerError::TenantNotFound(msg),
+                TenantKeyError::TenantNotFound(id) => IssuerError::TenantNotFound(id),
+                TenantKeyError::KeyUnavailable(_) => IssuerError::TenantNotFound(*tenant_id),
             })?;
 
         // Check authorization via sampling engine (if configured)

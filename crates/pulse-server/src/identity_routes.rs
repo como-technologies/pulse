@@ -131,8 +131,8 @@ fn map_issuer_error(e: IssuerError) -> ApiError {
             }
         }
         IssuerError::SigningFailed(inner) => ApiError::SigningFailed(inner.to_string()),
-        IssuerError::TenantNotFound(msg) => {
-            ApiError::Unauthorized(format!("tenant not found: {msg}"))
+        IssuerError::TenantNotFound(id) => {
+            ApiError::Unauthorized(format!("tenant not found: {id}"))
         }
     }
 }
