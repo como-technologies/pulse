@@ -20,3 +20,4 @@
 # Development
 
 - [Crate Structure](crate-structure.md)
+- [Verification Guide](verification.md)

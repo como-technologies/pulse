@@ -1434,6 +1434,7 @@ dependencies = [
  "anyhow",
  "axum",
  "base64",
+ "hex",
  "pulse-crypto",
  "pulse-identity",
  "pulse-protocol",

@@ -23,3 +23,4 @@ uuid.workspace = true
 reqwest = { version = "0.12.28", features = ["json"] }
 rand.workspace = true
 uuid.workspace = true
+hex.workspace = true
