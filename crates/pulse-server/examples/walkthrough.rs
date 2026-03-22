@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use pulse_crypto::blind_sig;
-use pulse_crypto::{aead, BlindSignature};
+use pulse_crypto::{BlindSignature, aead};
 use pulse_identity::{EmployeeId, TokenIssuer};
 use pulse_protocol::messages::{ResponseSubmit, TokenRequest};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
@@ -108,7 +108,10 @@ fn main() {
     let token_bytes = token.to_bytes();
 
     println!("  TokenPayload {{");
-    println!("    nonce:              {}  (32 bytes, random)", hex_preview(&token.nonce.0));
+    println!(
+        "    nonce:              {}  (32 bytes, random)",
+        hex_preview(&token.nonce.0)
+    );
     println!("    question_batch_id:  {batch_id}");
     println!("    tenant_id:          {tenant_id}");
     println!("    expiry:             <far future>");
@@ -192,9 +195,8 @@ fn main() {
     println!();
 
     let blind_sig_val = BlindSignature(token_response.blind_signature.0.clone());
-    let sig =
-        blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0)
-            .expect("unblinding failed");
+    let sig = blind_sig::finalize(&pk, &blind_sig_val, &blinding_result, &token_bytes.0)
+        .expect("unblinding failed");
 
     println!("  The client removes the blinding factor, producing a valid");
     println!("  signature over the ORIGINAL token that the Issuer never saw.");
@@ -206,12 +208,8 @@ fn main() {
     );
 
     // Verify client-side
-    let verify_result = blind_sig::verify(
-        &pk,
-        &sig,
-        blinding_result.msg_randomizer,
-        &token_bytes.0,
-    );
+    let verify_result =
+        blind_sig::verify(&pk, &sig, blinding_result.msg_randomizer, &token_bytes.0);
     assert!(verify_result.is_ok(), "client-side verification failed");
     println!();
     println!("  Client-side verification: VALID");
@@ -222,8 +220,8 @@ fn main() {
     println!();
 
     let response_plaintext = b"4";
-    let encrypted_response = aead::encrypt(&encryption_key, response_plaintext)
-        .expect("encryption failed");
+    let encrypted_response =
+        aead::encrypt(&encryption_key, response_plaintext).expect("encryption failed");
 
     println!("  Response plaintext: \"4\" (rating on a 5-point scale)");
     println!("  Encryption:         AES-256-GCM (random nonce)");
@@ -270,7 +268,10 @@ fn main() {
     println!("    key_version:       1");
     println!("    question_batch_id: {batch_id}");
     println!("    tenant_id:         {tenant_id}");
-    println!("    response_blob:     {} bytes (encrypted)", submit.response_blob.0.len());
+    println!(
+        "    response_blob:     {} bytes (encrypted)",
+        submit.response_blob.0.len()
+    );
     println!("  }}");
 
     // Step 7: Signal zone validates
@@ -280,7 +281,9 @@ fn main() {
     println!("  [SIGNAL ZONE] ResponseCollector.accept(...)");
     println!();
 
-    collector.accept(&submit).expect("response rejected unexpectedly");
+    collector
+        .accept(&submit)
+        .expect("response rejected unexpectedly");
 
     println!("  What the Signal zone checks:");
     println!("    Token deserialized:  YES");
@@ -313,7 +316,10 @@ fn main() {
 
     let log = issuer.issuance_log();
     println!("  Issuance log entries: {}", log.len());
-    println!("  Entry: employee_id=\"{}\", batch={}", log[0].employee_id.0, log[0].question_batch_id);
+    println!(
+        "  Entry: employee_id=\"{}\", batch={}",
+        log[0].employee_id.0, log[0].question_batch_id
+    );
     println!("  Contains unblinded token? NO");
     println!("  Contains response content? NO");
 
@@ -327,16 +333,20 @@ fn main() {
     let stored_response = &stored[0];
 
     println!("  Stored responses: {}", stored.len());
-    println!("  Response fields: encrypted_blob ({} bytes), question_batch_id, received_at",
-        stored_response.encrypted_blob.0.len());
+    println!(
+        "  Response fields: encrypted_blob ({} bytes), question_batch_id, received_at",
+        stored_response.encrypted_blob.0.len()
+    );
     println!("  Contains employee_id? NO (not in StoredResponse — enforced by types)");
     println!();
 
     let decrypted = aead::decrypt(&encryption_key, &stored_response.encrypted_blob.0)
         .expect("decryption failed");
     assert_eq!(decrypted, b"4");
-    println!("  Decrypting stored blob with client's key: \"{}\"",
-        String::from_utf8_lossy(&decrypted));
+    println!(
+        "  Decrypting stored blob with client's key: \"{}\"",
+        String::from_utf8_lossy(&decrypted)
+    );
 
     // ── SECURITY: Replay Prevention ────────────────────────────
 
@@ -393,7 +403,10 @@ fn main() {
         response_blob: EncryptedBlob(vec![0x00]),
     };
 
-    println!("  Forged signature: {} (256 bytes of 0xDE)", hex_preview(&forged_submit.signature.0));
+    println!(
+        "  Forged signature: {} (256 bytes of 0xDE)",
+        hex_preview(&forged_submit.signature.0)
+    );
     println!();
 
     let forge_result = collector.accept(&forged_submit);

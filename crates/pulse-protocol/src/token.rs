@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{KeyVersion, Nonce, QuestionBatchId, SegmentLabel, TenantId, TokenBytes, UnixTimestamp};
+use crate::{
+    KeyVersion, Nonce, QuestionBatchId, SegmentLabel, TenantId, TokenBytes, UnixTimestamp,
+};
 
 /// Device attestation class — determines the identity confidence of the device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

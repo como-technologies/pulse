@@ -113,7 +113,10 @@ fn full_protocol_flow() {
     // Identity zone log has employee identity
     let issuance_log = issuer.issuance_log();
     assert_eq!(issuance_log.len(), 1);
-    assert_eq!(issuance_log[0].employee_id, EmployeeId("employee-42".into()));
+    assert_eq!(
+        issuance_log[0].employee_id,
+        EmployeeId("employee-42".into())
+    );
 
     // BUT: the issuance log has NO unblinded token value — only batch ID
     // (The token issuer never saw the actual token, only the blinded version)

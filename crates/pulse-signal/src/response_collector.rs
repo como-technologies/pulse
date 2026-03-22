@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use pulse_crypto::blind_sig::{self, BrssPublicKey};
 use pulse_crypto::{MessageRandomizer, Signature};
+use pulse_protocol::UnixTimestamp;
 use pulse_protocol::messages::{RejectReason, ResponseSubmit};
 use pulse_protocol::token::TokenPayload;
-use pulse_protocol::UnixTimestamp;
 
 use crate::ledger::{SpendResult, SpentTokenLedger, TokenHash};
 use crate::store::{ResponseStore, StoredResponse};
