@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](introduction.md)
+[Pitch Sheet](pitch.md)
 
 # Concepts
 
