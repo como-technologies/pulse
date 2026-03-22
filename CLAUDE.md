@@ -21,3 +21,15 @@ All domain concepts use newtype wrappers. Bare primitives (`u64`, `Vec<u8>`, `St
 - All newtypes use `pub` inner fields (matching `TokenHash(pub [u8; 32])`)
 - Semantic constructors where invariants exist (e.g., `Nonce::random()`, `UnixTimestamp::now()`)
 - When adding a new field: check `pulse-protocol/src/newtypes.rs` first, create a newtype if none exists
+
+## Pre-Push Checklist (Required)
+
+Before every push, run all three checks against the full workspace **including tests and examples**:
+
+```sh
+cargo fmt --check
+cargo clippy --workspace --tests --examples
+cargo test --workspace
+```
+
+All three must pass clean. Do not push with formatting diffs, clippy warnings, or test failures.
