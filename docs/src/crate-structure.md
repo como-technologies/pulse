@@ -21,7 +21,13 @@ Shared wire types: `TokenPayload`, Phase 1 and Phase 2 message types. Serde-seri
 
 ## pulse-identity
 
-Identity zone domain logic. `TokenIssuer`: blind signature issuance, token validation, frequency bookkeeping.
+Identity zone domain logic. Defines traits and core types for the identity zone:
+
+- `TokenIssuer` — blind signature issuance with optional sampling engine authorization
+- `SamplingEngine` trait — question assignment, k-anonymity coarsening, frequency caps
+- `Authenticator` trait — pluggable credential verification
+- `SessionStore` trait — session token management
+- `InMemorySamplingEngine` — full in-memory implementation for tests and examples
 
 ## pulse-signal
 
@@ -35,7 +41,12 @@ Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `
 
 ## pulse-server
 
-Axum HTTP server exposing the Identity zone (port 8001) and Signal zone (port 8002) on separate listeners. Thin adapter layer -- delegates all logic to `pulse-identity` and `pulse-signal`.
+Axum HTTP server and composition root. Exposes the Identity zone (port 8001) and Signal zone (port 8002) on separate listeners. Provides concrete implementations of domain traits:
+
+- Dev providers: `DevAuthenticator`, `DevSamplingEngine` (for local development)
+- SQLite adapters: `SqliteLedger`, `SqliteStore` (for persistent storage)
+- Config-driven provider selection via environment variables
+- Auth extractor, error mapping, request tracing
 
 ## Dependency Graph
 

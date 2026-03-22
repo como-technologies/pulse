@@ -45,7 +45,10 @@ In Pulse, the Token Issuer signs tokens without seeing their actual values. The 
   3. Generate random nonce (n)
      Construct token payload:
        T = {n, question_batch_id,
-            tenant_id, expiry}
+            tenant_id, expiry,
+            segment_vector,
+            attestation_class,
+            key_version}
 
   4. Blind the token:
        T_blind = Blind(T, r)

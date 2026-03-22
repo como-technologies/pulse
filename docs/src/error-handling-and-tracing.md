@@ -19,7 +19,7 @@ Any type implementing `Sensitive` must override `Debug` and `Display` to output 
 | Type | Crate | Why it's sensitive |
 |------|-------|--------------------|
 | `EmployeeId` | pulse-identity | PII — directly identifies a person |
-| `ApiKey` | pulse-server | Authentication credential |
+| `SessionToken` | pulse-identity | Authentication session token |
 | `BlindedToken` | pulse-protocol | Could link identity to signal |
 | `BlindSig` | pulse-protocol | Cryptographic material |
 | `TokenBytes` | pulse-protocol | Contains full token value |
@@ -101,7 +101,7 @@ pub fn sign_token(
 Each domain crate defines a `thiserror` error enum:
 
 - `pulse-crypto`: `BlindSigError`, `AeadError`
-- `pulse-identity`: `IssuerError` (wraps `TokenDeniedReason` and `BlindSigError`)
+- `pulse-identity`: `IssuerError` (wraps `TokenDeniedReason` and `BlindSigError`), `AuthError` (wraps `InvalidCredentials` and `ProviderError`), `SamplingError` (wraps `NotAssigned`, `FrequencyCapExceeded`, `BatchExpired`)
 - `pulse-signal`: `CollectorError` (wraps `RejectReason`)
 
 All public functions return `Result<T, CrateError>`. Domain crates do not log — the caller decides the appropriate log level.
@@ -222,6 +222,8 @@ These prove the HTTP layer returns structured, correctly-coded errors:
 - `forged_signature_returns_422` — Status 422, code `RESPONSE_INVALID_SIGNATURE`
 - `batch_mismatch_returns_422` — Status 422, code `RESPONSE_BATCH_MISMATCH`
 - `empty_api_key_returns_401` — Status 401, code `UNAUTHORIZED`
+- `missing_auth_header_returns_401` — Status 401 when no `Authorization` header is sent
+- `invalid_session_token_returns_401` — Status 401 when session token is invalid
 - `error_response_has_consistent_structure` — Every error response has exactly `code` and `message` fields
 
 ### Tracing tests

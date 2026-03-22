@@ -60,43 +60,40 @@ See [Authentication Providers](authentication.md), [Sampling Engine Providers](s
 
 ## Test suite
 
-79 tests across 5 crates. Run all:
+Run the full suite across all crates:
 
 ```sh
-cargo test
+cargo test --workspace
 ```
 
 ### By crate
 
 ```sh
-cargo test -p pulse-crypto      # 11 tests — blind sigs + AEAD
-cargo test -p pulse-protocol    #  9 tests — wire types + token + sensitive redaction
-cargo test -p pulse-identity    # 24 tests — sampling engine, k-anonymity, frequency caps, sessions, EmployeeId
-cargo test -p pulse-signal      #  6 tests — spent-token ledger + tracing assertions
-cargo test -p pulse-server      # 29 tests — protocol flow + HTTP e2e + error responses + storage + keys
+cargo test -p pulse-crypto       # blind sigs + AEAD + proptest
+cargo test -p pulse-protocol     # wire types, token serialization, sensitive redaction
+cargo test -p pulse-identity     # sampling engine, k-anonymity, frequency caps, sessions, token issuer
+cargo test -p pulse-signal       # spent-token ledger, response collector, tracing assertions
+cargo test -p pulse-server       # protocol flow, HTTP e2e, error responses, SQLite storage, key persistence
 ```
 
-### By name
+### By topic
 
 ```sh
-cargo test full_protocol_flow           # 14-step in-memory flow
-cargo test duplicate_submission         # replay prevention
-cargo test forged_signature             # signature forgery
-cargo test full_http_flow               # HTTP round-trip
 cargo test coarsen                      # k-anonymity segment coarsening
 cargo test frequency_cap                # issuance frequency caps
 cargo test sign_token_denied            # sampling engine denial via TokenIssuer
-cargo test questions_include            # segment_vector in question delivery
-cargo test sign_denied                  # HTTP 403 frequency cap enforcement
-cargo test -- --nocapture               # show println output
+cargo test full_protocol_flow           # 14-step in-memory protocol flow
+cargo test full_http_flow               # HTTP round-trip across both zones
+cargo test duplicate_submission         # replay prevention
+cargo test forged_signature             # signature forgery rejection
 ```
 
 ### Integration tests only
 
 ```sh
-cargo test --test protocol_flow    # in-memory protocol flow (5 tests)
-cargo test --test e2e              # HTTP round-trip + sampling enforcement (3 tests)
-cargo test --test error_responses  # structured error responses (7 tests)
+cargo test --test protocol_flow    # in-memory protocol flow
+cargo test --test e2e              # HTTP round-trip + sampling enforcement
+cargo test --test error_responses  # structured error responses
 ```
 
 ## What each layer proves
@@ -151,29 +148,25 @@ cargo test --test error_responses  # structured error responses (7 tests)
 
 **Observability verification** — Successful response acceptance logs "response accepted". Forged signatures do not log success. Debug-level validation steps are emitted for each stage of the pipeline.
 
-## Key properties verified
+## Testing strategy
 
-| Property | Tests |
-|----------|-------|
-| Blind signature round-trip | `full_blind_signature_round_trip`, `blind_sign_verify_roundtrip` (proptest) |
-| Blinding unlinkability | `different_blinding_factors_produce_different_blinded_messages` |
-| Wrong key/message rejection | `wrong_key_fails_verification`, `wrong_message_fails_verification` |
-| Random signature rejection | `random_signature_fails_verification` |
-| AEAD round-trip | `encrypt_decrypt_round_trip`, `encrypt_decrypt_roundtrip_any_data` (proptest) |
-| AEAD tamper detection | `tampered_ciphertext_fails`, `wrong_key_fails_decryption` |
-| Nonce uniqueness | `different_encryptions_produce_different_ciphertext` |
-| Token serialization | `serialize_deserialize_round_trip`, `expiry_check` |
-| Wire type fidelity | `token_request_round_trip`, `response_submit_round_trip`, `reject_reasons_serialize` |
-| Spent-token ledger | `first_spend_accepted`, `duplicate_spend_rejected`, `different_tokens_both_accepted` |
-| Full protocol flow | `full_protocol_flow`, `full_http_flow` |
-| Replay prevention | `duplicate_submission_rejected` |
-| Forged signature rejection | `forged_signature_rejected` |
-| Batch/tenant mismatch | `wrong_batch_id_rejected`, `wrong_tenant_id_rejected` |
-| K-anonymity coarsening | `coarsen_large_segment_keeps_label`, `coarsen_small_segment_walks_up`, `coarsen_walks_multiple_levels`, `coarsen_root_used_when_all_small`, `coarsen_multiple_segments_independently` |
-| Frequency cap enforcement | `frequency_cap_allows_first_issuance`, `frequency_cap_blocks_second_issuance`, `sign_token_denied_frequency_cap`, `sign_denied_frequency_cap` |
-| Sampling authorization | `authorize_unassigned_employee_denied`, `authorize_expired_batch_denied`, `sign_token_denied_not_assigned`, `sign_token_denied_expired_batch` |
-| Assignment queries | `assignments_returns_assigned_batches`, `assignments_exclude_already_issued`, `assignments_exclude_expired_batches`, `assignments_include_coarsened_segments`, `assign_all_assigns_every_rostered_employee` |
-| Segment vector delivery | `questions_include_segment_vector` |
-| Structured error responses | `duplicate_submission_returns_422_with_error_code`, `forged_signature_returns_422`, `batch_mismatch_returns_422`, `empty_api_key_returns_401`, `missing_auth_header_returns_401`, `invalid_session_token_returns_401`, `error_response_has_consistent_structure` |
-| Tracing observability | `accept_logs_success`, `duplicate_submission_does_not_log_success`, `forged_signature_logs_no_success` |
-| Sensitive type redaction | `sensitive_types_redact_debug`, `sensitive_types_redact_display`, `sensitive_types_still_serialize_to_real_values`, `safe_types_show_real_values_in_debug`, `employee_id_redacts_debug_and_display`, `employee_id_inner_value_accessible_via_field`, `employee_id_equality_works_despite_redacted_debug` |
+### Layered testing
+
+Protocol correctness is tested at two levels:
+
+1. **In-memory** (`protocol_flow.rs`) — exercises the full blind signature lifecycle without HTTP serialization or routing. Fast, deterministic, isolates domain logic from transport concerns.
+2. **Over HTTP** (`e2e.rs`) — exercises the same flow through real Axum routers on random ports. Catches serialization bugs, routing misconfigurations, and status code mapping issues that in-memory tests miss.
+
+Both levels run on every `cargo test`. If a protocol-level test passes but an HTTP-level test fails, the bug is in the transport layer, not the domain logic.
+
+### Backward compatibility via `TokenIssuer::new()`
+
+Tests that verify core protocol properties (blind signature round-trip, replay prevention, forged signature rejection) use `TokenIssuer::new()` — no sampling engine attached. This ensures the protocol works independently of the sampling layer, which is important for isolating regressions. Tests that specifically exercise sampling authorization use `TokenIssuer::with_sampling()`.
+
+### Property-based testing for crypto
+
+`pulse-crypto` uses `proptest` to verify cryptographic operations hold for arbitrary inputs, not just known-good test vectors. This catches edge cases in key generation, blinding, signing, verification, and AEAD encryption that example-based tests miss.
+
+### Dev providers in integration tests
+
+E2E and error response tests use `DevSamplingEngine` (accepts any employee) rather than `InMemorySamplingEngine` (requires explicit roster setup). This mirrors the actual composition used when running `cargo run` with default config, ensuring the dev experience itself is tested.
