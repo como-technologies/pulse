@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BlindSig, BlindedToken, EncryptedBlob, KeyVersion, QuestionBatchId, QuestionText, SegmentLabel,
-    SignatureBytes, TenantId, TokenBytes, UnixTimestamp,
+    BlindSig, BlindedToken, EncryptedBlob, EpochId, KeyVersion, Pseudonym, QuestionBatchId,
+    QuestionText, SegmentLabel, SignatureBytes, TenantId, TokenBytes, UnixTimestamp,
 };
 
 // ── Phase 1: Identity-Aware Channel (Client ↔ Identity Zone) ──
@@ -100,6 +100,38 @@ pub enum RejectReason {
     Malformed,
 }
 
+// ── Response Payload (cleartext inner structure of encrypted blob) ──
+
+/// Typed response data matching the question's response type.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ResponseData {
+    Scale5(u8),
+    Binary(bool),
+    Emoji(String),
+    FreeText(String),
+}
+
+/// Cleartext response payload that lives inside the encrypted response blob.
+///
+/// The client constructs this, encrypts it with the analytics DEK, and submits
+/// the ciphertext as `response_blob` in [`ResponseSubmit`]. The Analytics Engine
+/// decrypts the blob and parses this structure for aggregation.
+///
+/// The Response Collector never sees this — it treats the blob as opaque bytes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponsePayload {
+    /// Stable anonymous pseudonym for longitudinal tracking.
+    pub pseudonym: Pseudonym,
+    /// Which epoch this pseudonym is scoped to.
+    pub epoch_id: EpochId,
+    /// The response type (must match the question's expected type).
+    pub response_type: ResponseType,
+    /// The actual response data.
+    pub response_data: ResponseData,
+    /// Coarsened segment labels (echoed from QuestionDelivery for analytics).
+    pub segment_vector: Vec<SegmentLabel>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +165,22 @@ mod tests {
         assert_eq!(submit.signature, recovered.signature);
         assert_eq!(submit.msg_randomizer, recovered.msg_randomizer);
         assert_eq!(submit.response_blob, recovered.response_blob);
+    }
+
+    #[test]
+    fn response_payload_round_trip() {
+        let payload = ResponsePayload {
+            pseudonym: Pseudonym([42u8; 32]),
+            epoch_id: EpochId("epoch-7".to_string()),
+            response_type: ResponseType::Scale5,
+            response_data: ResponseData::Scale5(4),
+            segment_vector: vec![SegmentLabel::from("engineering")],
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let recovered: ResponsePayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered.pseudonym, payload.pseudonym);
+        assert_eq!(recovered.epoch_id, payload.epoch_id);
+        assert_eq!(recovered.segment_vector, payload.segment_vector);
     }
 
     #[test]

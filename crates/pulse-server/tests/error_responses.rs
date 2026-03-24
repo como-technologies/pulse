@@ -59,6 +59,7 @@ async fn start_test_servers() -> (
     let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(key_store, ledger, store.clone()),
         store,
+        analytics: None,
     });
 
     let identity_router = Router::new()

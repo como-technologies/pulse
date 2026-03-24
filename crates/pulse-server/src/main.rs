@@ -190,10 +190,19 @@ async fn main() -> anyhow::Result<()> {
         tenant_id: default_tenant_id,
     });
 
-    // Signal zone state — anonymous response collection
+    // Analytics engine — decrypts response payloads and aggregates by segment
+    let analytics = pulse_server::analytics::AnalyticsEngine::new(
+        store.clone(),
+        dek_store.clone(),
+        cmk.clone(),
+        config.k_threshold,
+    );
+
+    // Signal zone state — anonymous response collection and analytics
     let signal_state = Arc::new(SignalState {
         collector: ResponseCollector::new(tenant_key_store, ledger, store.clone()),
         store,
+        analytics: Some(analytics),
     });
 
     // Identity zone router — authenticated endpoints
@@ -210,6 +219,10 @@ async fn main() -> anyhow::Result<()> {
     let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
         .route("/debug/responses", get(signal_routes::debug_responses))
+        .route(
+            "/analytics/batch/{batch_id}",
+            get(pulse_server::analytics_routes::aggregate_batch),
+        )
         .with_state(signal_state)
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(trace_layer("signal"))

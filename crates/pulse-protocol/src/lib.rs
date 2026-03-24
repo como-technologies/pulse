@@ -1,3 +1,4 @@
+pub mod epoch;
 pub mod messages;
 pub mod newtypes;
 pub mod token;

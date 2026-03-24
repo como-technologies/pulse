@@ -1,5 +1,6 @@
 pub mod aead;
 pub mod blind_sig;
+pub mod pseudonym;
 
 // Re-export key types for convenience
 pub use blind_rsa_signatures::{

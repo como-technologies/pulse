@@ -80,6 +80,31 @@ impl ResponseStore for EncryptingResponseStore {
         self.inner.count()
     }
 
+    fn list_by_batch(
+        &self,
+        question_batch_id: &pulse_protocol::QuestionBatchId,
+        tenant_id: &pulse_protocol::TenantId,
+    ) -> Vec<StoredResponse> {
+        let mut responses = self.inner.list_by_batch(question_batch_id, tenant_id);
+        for response in &mut responses {
+            if let Some(dek) = self.unwrap_response_dek(&response.tenant_id) {
+                match pulse_crypto::aead::decrypt(&dek, &response.encrypted_blob.0) {
+                    Ok(decrypted) => {
+                        response.encrypted_blob = pulse_protocol::EncryptedBlob(decrypted);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            tenant_id = %response.tenant_id,
+                            error = %e,
+                            "failed to decrypt response blob (returning as-is)"
+                        );
+                    }
+                }
+            }
+        }
+        responses
+    }
+
     fn list(&self) -> Vec<StoredResponse> {
         let mut responses = self.inner.list();
         for response in &mut responses {

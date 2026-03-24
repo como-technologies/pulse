@@ -39,6 +39,11 @@ pub struct Config {
     /// Supported values:
     /// - `dev` — single fixed wrapping key for all tenants (not for production)
     pub cmk_provider: String,
+    /// Epoch duration in seconds (`PULSE_EPOCH_DURATION_SECS`, default `7776000` = 90 days).
+    ///
+    /// Controls pseudonym rotation period. Shorter epochs give stronger privacy
+    /// but weaker longitudinal analysis. Longer epochs are the reverse.
+    pub epoch_duration_secs: u64,
 }
 
 impl Config {
@@ -62,6 +67,9 @@ impl Config {
                 .expect("PULSE_MAX_TOKENS_PER_BATCH must be a positive integer"),
             tenant_id: env_or("PULSE_TENANT_ID", "00000000-0000-0000-0000-000000000001"),
             cmk_provider: env_or("PULSE_CMK_PROVIDER", "dev"),
+            epoch_duration_secs: env_or("PULSE_EPOCH_DURATION_SECS", "7776000")
+                .parse()
+                .expect("PULSE_EPOCH_DURATION_SECS must be a positive integer"),
         }
     }
 }

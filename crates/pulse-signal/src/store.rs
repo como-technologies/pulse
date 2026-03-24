@@ -23,6 +23,17 @@ pub trait ResponseStore: Send + Sync {
     fn store(&self, response: StoredResponse);
     fn count(&self) -> usize;
     fn list(&self) -> Vec<StoredResponse>;
+    /// List responses for a specific question batch and tenant.
+    fn list_by_batch(
+        &self,
+        question_batch_id: &QuestionBatchId,
+        tenant_id: &TenantId,
+    ) -> Vec<StoredResponse> {
+        self.list()
+            .into_iter()
+            .filter(|r| r.question_batch_id == *question_batch_id && r.tenant_id == *tenant_id)
+            .collect()
+    }
 }
 // ANCHOR_END: response_store
 

@@ -12,11 +12,13 @@ use crate::dev_tenant_keys::InMemoryTenantKeyStore;
 ///    wrapped by the tenant's CMK and stored in the DEK store.
 /// 2. **DEK-blindsig** — data encryption key for blind-signature key material at rest,
 ///    wrapped by the tenant's CMK and stored in the DEK store.
-/// 3. **Blind-signature keypair** — RSA keypair for the blind signature protocol,
+/// 3. **DEK-analytics** — data encryption key for client-side response payload encryption;
+///    the Analytics Engine uses this to decrypt response payloads for aggregation.
+/// 4. **Blind-signature keypair** — RSA keypair for the blind signature protocol,
 ///    registered in the tenant key store.
 ///
 /// The provisioner is the single entry point for tenant onboarding, ensuring all
-/// three pieces of material are generated atomically.
+/// material is generated atomically.
 pub struct TenantProvisioner {
     cmk: Arc<dyn CmkProvider>,
     dek_store: Arc<dyn DekStore>,
@@ -57,7 +59,14 @@ impl TenantProvisioner {
             .store_wrapped_dek(&tenant_id, DekDomain::BlindSig, wrapped);
         tracing::debug!("stored wrapped DEK-blindsig");
 
-        // 3. Generate blind-signature keypair and register
+        // 3. Generate and wrap DEK-analytics (client-side response payload encryption)
+        let dek_analytics = pulse_crypto::aead::generate_key();
+        let wrapped = self.cmk.wrap_dek(&tenant_id, &dek_analytics)?;
+        self.dek_store
+            .store_wrapped_dek(&tenant_id, DekDomain::Analytics, wrapped);
+        tracing::debug!("stored wrapped DEK-analytics");
+
+        // 4. Generate blind-signature keypair and register
         let kp = pulse_crypto::blind_sig::generate_keypair()?;
         self.key_store
             .register_tenant(tenant_id, kp.sk, kp.pk, KeyVersion(1));
@@ -100,6 +109,13 @@ mod tests {
             .get_wrapped_dek(&tenant_id, &DekDomain::BlindSig)
             .expect("DEK-blindsig should exist");
         let dek = cmk.unwrap_dek(&tenant_id, &wrapped_blindsig).unwrap();
+        assert_eq!(dek.len(), 32);
+
+        // DEK-analytics exists and is valid
+        let wrapped_analytics = dek_store
+            .get_wrapped_dek(&tenant_id, &DekDomain::Analytics)
+            .expect("DEK-analytics should exist");
+        let dek = cmk.unwrap_dek(&tenant_id, &wrapped_analytics).unwrap();
         assert_eq!(dek.len(), 32);
 
         // Signing key is available

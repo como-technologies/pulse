@@ -203,6 +203,39 @@ impl fmt::Display for EncryptedBlob {
     }
 }
 
+/// Stable anonymous pseudonym for longitudinal sentiment tracking.
+///
+/// Derived client-side as `HMAC-SHA256(employee_secret, tenant_id || epoch_id)`.
+/// Contains identity-linkable material — Debug and Display are redacted.
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Pseudonym(pub [u8; 32]);
+
+impl Sensitive for Pseudonym {}
+
+impl fmt::Debug for Pseudonym {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Pseudonym").field(&"[REDACTED]").finish()
+    }
+}
+
+impl fmt::Display for Pseudonym {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[REDACTED:Pseudonym]")
+    }
+}
+
+/// Time-based epoch identifier bounding the pseudonym correlation window.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct EpochId(pub String);
+
+impl fmt::Display for EpochId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Coarsened organization segment label (e.g., "engineering", "backend").
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -244,6 +277,7 @@ mod tests {
         let token = TokenBytes(vec![7, 8, 9]);
         let sig = SignatureBytes(vec![10, 11, 12]);
         let blob = EncryptedBlob(vec![13, 14, 15]);
+        let pseudonym = Pseudonym([42u8; 32]);
 
         for (debug_output, type_name) in [
             (format!("{blinded:?}"), "BlindedToken"),
@@ -251,6 +285,7 @@ mod tests {
             (format!("{token:?}"), "TokenBytes"),
             (format!("{sig:?}"), "SignatureBytes"),
             (format!("{blob:?}"), "EncryptedBlob"),
+            (format!("{pseudonym:?}"), "Pseudonym"),
         ] {
             assert!(
                 debug_output.contains("[REDACTED]"),
@@ -261,7 +296,8 @@ mod tests {
                     && !debug_output.contains("4,")
                     && !debug_output.contains("7,")
                     && !debug_output.contains("10,")
-                    && !debug_output.contains("13,"),
+                    && !debug_output.contains("13,")
+                    && !debug_output.contains("42,"),
                 "{type_name} Debug must not contain inner bytes, got: {debug_output}"
             );
         }
@@ -274,6 +310,7 @@ mod tests {
         let token = TokenBytes(vec![7, 8, 9]);
         let sig = SignatureBytes(vec![10, 11, 12]);
         let blob = EncryptedBlob(vec![13, 14, 15]);
+        let pseudonym = Pseudonym([42u8; 32]);
 
         for (display_output, type_name) in [
             (format!("{blinded}"), "BlindedToken"),
@@ -281,6 +318,7 @@ mod tests {
             (format!("{token}"), "TokenBytes"),
             (format!("{sig}"), "SignatureBytes"),
             (format!("{blob}"), "EncryptedBlob"),
+            (format!("{pseudonym}"), "Pseudonym"),
         ] {
             assert!(
                 display_output.contains("[REDACTED"),
@@ -302,10 +340,16 @@ mod tests {
     #[test]
     fn safe_types_show_real_values_in_debug() {
         let batch = QuestionBatchId::new();
-        let debug = format!("{batch:?}");
-        assert!(
-            !debug.contains("REDACTED"),
-            "safe types must not be redacted"
-        );
+        let epoch = EpochId("epoch-42".to_string());
+
+        for (debug_output, type_name) in [
+            (format!("{batch:?}"), "QuestionBatchId"),
+            (format!("{epoch:?}"), "EpochId"),
+        ] {
+            assert!(
+                !debug_output.contains("REDACTED"),
+                "{type_name} must not be redacted, got: {debug_output}"
+            );
+        }
     }
 }

@@ -9,16 +9,20 @@
 use std::sync::Arc;
 
 use pulse_crypto::blind_sig;
-use pulse_crypto::{BlindSignature, aead};
+use pulse_crypto::{BlindSignature, aead, pseudonym};
 use pulse_identity::{
     EmployeeId, FrequencyPolicy, InMemorySamplingEngine, QuestionBatch, SamplingEngine, TokenIssuer,
 };
-use pulse_protocol::messages::{ResponseSubmit, ResponseType, TokenRequest};
+use pulse_protocol::epoch::EpochConfig;
+use pulse_protocol::messages::{
+    ResponseData, ResponsePayload, ResponseSubmit, ResponseType, TokenRequest,
+};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{
-    BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, QuestionText, SignatureBytes,
-    TenantId, UnixTimestamp,
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, Pseudonym, QuestionBatchId, QuestionText,
+    SegmentLabel, SignatureBytes, TenantId, UnixTimestamp,
 };
+use pulse_server::analytics::AnalyticsEngine;
 use pulse_server::cmk::CmkProvider;
 use pulse_server::dek_store::{DekDomain, DekStore, InMemoryDekStore};
 use pulse_server::dev_cmk::DevCmkProvider;
@@ -674,6 +678,125 @@ fn main() {
     println!("  This is crypto-shredding: delete the key, and all data");
     println!("  encrypted under it becomes permanently irrecoverable.");
 
+    // ── ANALYTICS ENGINE ──────────────────────────────────────
+
+    println!();
+    println!(
+        "\
+========================================================
+  ANALYTICS: Pseudonyms and Longitudinal Tracking
+========================================================"
+    );
+    println!();
+    println!("Pulse supports longitudinal sentiment tracking via stable");
+    println!("anonymous pseudonyms. The client derives a pseudonym from a");
+    println!("local secret, embeds it in the encrypted response payload,");
+    println!("and the Analytics Engine aggregates by segment + pseudonym.");
+    println!();
+
+    // Set up analytics infrastructure
+    let analytics_cmk: Arc<dyn CmkProvider> = Arc::new(DevCmkProvider::new());
+    let analytics_dek_store: Arc<dyn DekStore> = Arc::new(InMemoryDekStore::new());
+    let analytics_tenant_id = TenantId::new();
+
+    let analytics_dek = aead::generate_key();
+    let wrapped_analytics = analytics_cmk
+        .wrap_dek(&analytics_tenant_id, &analytics_dek)
+        .expect("wrap failed");
+    analytics_dek_store.store_wrapped_dek(
+        &analytics_tenant_id,
+        DekDomain::Analytics,
+        wrapped_analytics,
+    );
+
+    println!("--- Pseudonym derivation (client-side) ---");
+    println!();
+
+    let employee_secret = pseudonym::generate_employee_secret();
+    let epoch_config = EpochConfig::default();
+    let epoch_id = epoch_config.current_epoch();
+    let pseudonym_bytes = pseudonym::derive_pseudonym(
+        &employee_secret,
+        analytics_tenant_id.0.as_bytes(),
+        epoch_id.0.as_bytes(),
+    );
+
+    println!(
+        "  employee_secret:  {} (32 bytes, client-only)",
+        hex_preview(&employee_secret)
+    );
+    println!("  epoch_id:         {epoch_id}");
+    println!(
+        "  pseudonym:        {} (HMAC-SHA256 output)",
+        hex_preview(&pseudonym_bytes)
+    );
+    println!();
+    println!("  The pseudonym is deterministic: same secret + tenant + epoch");
+    println!("  always produces the same value. Different epochs produce");
+    println!("  different pseudonyms (epoch rotation bounds correlation).");
+    println!();
+
+    // Create response payloads from multiple "employees"
+    let analytics_store: Arc<dyn ResponseStore> = Arc::new(InMemoryStore::new());
+
+    let analytics_batch = QuestionBatchId::new();
+    for i in 0u8..5 {
+        let secret = [i + 1; 32]; // different secret per "employee"
+        let pseudo = pseudonym::derive_pseudonym(
+            &secret,
+            analytics_tenant_id.0.as_bytes(),
+            epoch_id.0.as_bytes(),
+        );
+        let payload = ResponsePayload {
+            pseudonym: Pseudonym(pseudo),
+            epoch_id: epoch_id.clone(),
+            response_type: ResponseType::Scale5,
+            response_data: ResponseData::Scale5(i + 2), // scores: 2,3,4,5,6→clamped
+            segment_vector: vec![SegmentLabel::from("engineering")],
+        };
+        let json = serde_json::to_vec(&payload).unwrap();
+        let encrypted = aead::encrypt(&analytics_dek, &json).unwrap();
+
+        analytics_store.store(pulse_signal::StoredResponse {
+            encrypted_blob: EncryptedBlob(encrypted),
+            question_batch_id: analytics_batch,
+            tenant_id: analytics_tenant_id,
+            received_at: UnixTimestamp::now(),
+        });
+    }
+
+    println!("  Stored 5 encrypted response payloads (5 different pseudonyms)");
+    println!();
+
+    println!("--- Analytics Engine aggregation ---");
+    println!();
+
+    let engine = AnalyticsEngine::new(analytics_store, analytics_dek_store, analytics_cmk, 3);
+    let aggregation = engine
+        .aggregate_batch(&analytics_batch, &analytics_tenant_id)
+        .expect("aggregation failed");
+
+    println!("  BatchAggregation {{");
+    println!("    total_responses:  {}", aggregation.total_responses);
+    println!("    total_decrypted:  {}", aggregation.total_decrypted);
+    println!("    total_failed:     {}", aggregation.total_failed);
+    println!("    segments:");
+    for seg in &aggregation.segments {
+        println!("      {} {{", seg.segment_label.0);
+        println!("        response_count:     {}", seg.response_count);
+        println!("        unique_pseudonyms:  {}", seg.unique_pseudonyms);
+        println!("        suppressed:         {}", seg.suppressed);
+        if let Some(avg) = seg.average_score {
+            println!("        average_score:      {avg:.1}");
+        }
+        println!("      }}");
+    }
+    println!("  }}");
+    println!();
+    println!("  The Analytics Engine decrypted all 5 blobs, grouped by segment,");
+    println!("  and computed the average score. With k=3 and 5 unique pseudonyms,");
+    println!("  the engineering segment is NOT suppressed.");
+
     // ── SUMMARY ────────────────────────────────────────────────
 
     println!();
@@ -711,6 +834,13 @@ fn main() {
 
   8. CRYPTO-SHREDDABLE: Deleting a tenant's keys makes all their data
                         permanently irrecoverable by design.
+
+  9. LONGITUDINAL:  Stable pseudonyms enable tracking sentiment trends
+                    over time without revealing identity.
+
+ 10. EPOCH-ROTATED: Pseudonyms change each epoch, bounding the window
+                    for longitudinal correlation and reducing
+                    re-identification risk.
 
   Run the full test suite to verify all properties:
     cargo test

@@ -31,6 +31,12 @@ pub enum ApiError {
     ResponseRejected { code: &'static str, message: String },
     /// Malformed request body (400).
     BadRequest(String),
+    /// Analytics engine not configured (500).
+    AnalyticsUnavailable,
+    /// Analytics: tenant or DEK not found (404).
+    AnalyticsNotFound(String),
+    /// Analytics: internal error (500).
+    AnalyticsInternal(String),
 }
 
 impl IntoResponse for ApiError {
@@ -46,6 +52,22 @@ impl IntoResponse for ApiError {
                 (StatusCode::UNPROCESSABLE_ENTITY, code, message)
             }
             ApiError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg),
+            ApiError::AnalyticsUnavailable => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "ANALYTICS_UNAVAILABLE",
+                "analytics engine not configured".to_string(),
+            ),
+            ApiError::AnalyticsNotFound(msg) => {
+                (StatusCode::NOT_FOUND, "ANALYTICS_TENANT_NOT_FOUND", msg)
+            }
+            ApiError::AnalyticsInternal(msg) => {
+                tracing::error!(error = %msg, "analytics internal error");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ANALYTICS_INTERNAL_ERROR",
+                    msg,
+                )
+            }
         };
 
         if status.is_client_error() {

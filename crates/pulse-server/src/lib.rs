@@ -4,6 +4,10 @@ use pulse_identity::{Authenticator, SamplingEngine, SessionStore, TokenIssuer};
 use pulse_protocol::TenantId;
 use pulse_signal::{ResponseCollector, ResponseStore};
 
+use crate::analytics::AnalyticsEngine;
+
+pub mod analytics;
+pub mod analytics_routes;
 pub mod auth_extractor;
 pub mod cmk;
 pub mod config;
@@ -40,7 +44,7 @@ pub struct IdentityState {
     pub tenant_id: TenantId,
 }
 
-/// Signal zone state. Holds response collection and storage.
+/// Signal zone state. Holds response collection, storage, and analytics.
 ///
 /// This type carries no authentication components. Signal-zone handlers accept
 /// anonymous submissions — adding auth here would be a design violation.
@@ -52,4 +56,5 @@ pub struct IdentityState {
 pub struct SignalState {
     pub collector: ResponseCollector,
     pub store: Arc<dyn ResponseStore>,
+    pub analytics: Option<AnalyticsEngine>,
 }

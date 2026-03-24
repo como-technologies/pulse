@@ -8,10 +8,12 @@ use pulse_protocol::TenantId;
 /// blind-sig DEKs during a key rotation).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DekDomain {
-    /// DEK for encrypting/decrypting stored response blobs.
+    /// DEK for encrypting/decrypting stored response blobs (at-rest encryption).
     Responses,
     /// DEK for encrypting/decrypting blind-signature key material at rest.
     BlindSig,
+    /// DEK for client-side response payload encryption (Analytics Engine decrypts).
+    Analytics,
 }
 
 /// Stores wrapped (encrypted) DEKs, keyed by (tenant, domain).
