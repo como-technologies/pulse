@@ -51,8 +51,6 @@ This is intentional. Never work around it.
 {{#include ../../crates/pulse-identity/src/auth.rs:authenticator_trait}}
 ```
 
-The `credential` parameter is the raw string the client sends in the `api_key` field of `POST /auth`. For OIDC providers, this is typically an ID token or authorization code.
-
 ### Example: Google OIDC Provider
 
 Here's how you'd implement a Google OIDC authenticator. This validates a Google ID token and extracts the user's email as the `EmployeeId`.

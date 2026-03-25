@@ -25,6 +25,7 @@ Any type implementing `Sensitive` must override `Debug` and `Display` to output 
 | `TokenBytes` | pulse-protocol | Contains full token value |
 | `SignatureBytes` | pulse-protocol | Could link identity to signal |
 | `EncryptedBlob` | pulse-protocol | Encrypted response content |
+| `Pseudonym` | pulse-protocol | Derived from employee secret — linkable to identity |
 
 ### Safe types (normal Debug/Display)
 
@@ -125,8 +126,9 @@ All public functions return `Result<T, CrateError>`. Domain crates do not log �
 | 400 | Malformed request body | `BAD_REQUEST` |
 | 401 | Authentication failure | `UNAUTHORIZED` |
 | 403 | Policy denial | `TOKEN_DENIED_FREQUENCY_CAP`, `TOKEN_DENIED_NOT_AUTHORIZED`, `TOKEN_DENIED_BATCH_EXPIRED` |
+| 404 | Resource not found | `ANALYTICS_TENANT_NOT_FOUND` |
 | 422 | Semantically invalid | `RESPONSE_INVALID_SIGNATURE`, `RESPONSE_TOKEN_EXPIRED`, `RESPONSE_TOKEN_ALREADY_SPENT`, `RESPONSE_BATCH_MISMATCH`, `RESPONSE_TENANT_MISMATCH`, `RESPONSE_MALFORMED` |
-| 500 | Internal server error | `SIGNING_FAILED` |
+| 500 | Internal server error | `SIGNING_FAILED`, `ANALYTICS_UNAVAILABLE`, `ANALYTICS_INTERNAL_ERROR` |
 
 ### Error mapping
 
@@ -207,8 +209,8 @@ The test suite includes tests that verify redaction, error structure, and tracin
 
 These prove that `Debug` and `Display` never leak inner values for sensitive types:
 
-- `sensitive_types_redact_debug` — All 5 protocol sensitive types output `[REDACTED]` via `{:?}`
-- `sensitive_types_redact_display` — All 5 protocol sensitive types output `[REDACTED]` via `{}`
+- `sensitive_types_redact_debug` — All 6 protocol sensitive types output `[REDACTED]` via `{:?}`
+- `sensitive_types_redact_display` — All 6 protocol sensitive types output `[REDACTED]` via `{}`
 - `sensitive_types_still_serialize_to_real_values` — Serde still serializes the real inner value (redaction only affects formatting, not wire protocol)
 - `safe_types_show_real_values_in_debug` — Non-sensitive types like `QuestionBatchId` are not accidentally redacted
 - `employee_id_redacts_debug_and_display` — `EmployeeId` with value `"alice@example.com"` outputs `[REDACTED]`, never `"alice"`

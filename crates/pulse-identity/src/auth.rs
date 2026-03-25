@@ -20,6 +20,11 @@ pub enum AuthError {
 // ANCHOR: authenticator_trait
 #[async_trait::async_trait]
 pub trait Authenticator: Send + Sync {
+    /// Verify a credential and return the authenticated employee.
+    ///
+    /// `credential` is the raw string from the client's `api_key` field
+    /// in `POST /auth`. For OIDC providers this is typically an ID token
+    /// or authorization code; for API-key providers it is the key itself.
     async fn authenticate(&self, credential: &str) -> Result<EmployeeId, AuthError>;
 }
 // ANCHOR_END: authenticator_trait

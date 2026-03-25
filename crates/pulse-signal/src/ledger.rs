@@ -28,10 +28,30 @@ pub enum SpendResult {
 // ANCHOR_END: spend_result
 
 // ANCHOR: spent_token_ledger
-/// Append-only spent-token ledger.
-/// Tracks which tokens have been used to prevent replay/duplicate submission.
+/// Append-only spent-token ledger for replay prevention.
+///
+/// Tracks which token hashes have been spent. Once a token is spent, it can
+/// never be un-spent — there is no delete or unspend operation.
+///
+/// [`TokenHash`] is a `[u8; 32]` SHA-256 hash of the serialized token.
+/// Store it as raw bytes.
+///
+/// # Implementor requirements
+///
+/// - [`check_and_spend`](Self::check_and_spend) must be **atomic**: two
+///   concurrent requests with the same hash must not both return
+///   [`SpendResult::Accepted`]. Use database-level uniqueness constraints
+///   or mutex locks.
+/// - Database errors are catastrophic — use `.expect("...")` to crash the
+///   process. A silent failure during check-and-spend could allow
+///   double-voting.
 pub trait SpentTokenLedger: Send + Sync {
-    /// Atomically check if a token hash is already spent, and if not, mark it as spent.
+    /// Atomically check if `hash` is already spent; if not, mark it as spent.
+    ///
+    /// Returns [`SpendResult::Accepted`] on first use and
+    /// [`SpendResult::AlreadySpent`] on duplicates. The check and recording
+    /// must happen in a single atomic operation to prevent concurrent
+    /// double-acceptance.
     fn check_and_spend(&self, hash: TokenHash) -> SpendResult;
 }
 // ANCHOR_END: spent_token_ledger

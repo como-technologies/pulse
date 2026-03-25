@@ -18,12 +18,29 @@ pub struct StoredResponse {
 // ANCHOR_END: stored_response
 
 // ANCHOR: response_store
-/// Trait for persisting anonymous responses.
+/// Append-only storage for encrypted anonymous responses.
+///
+/// The Signal zone never decrypts response content — implementations must
+/// treat [`StoredResponse::encrypted_blob`] as opaque bytes.
+///
+/// # Implementor requirements
+///
+/// - [`store`](Self::store) appends only — never updates or deletes existing
+///   responses.
+/// - [`list`](Self::list) returns responses in insertion order.
+/// - Database errors are catastrophic — use `.expect("...")` to crash the
+///   process (same convention as [`SpentTokenLedger`]).
 pub trait ResponseStore: Send + Sync {
+    /// Append an encrypted response to the store. Never updates or deletes.
     fn store(&self, response: StoredResponse);
+    /// Return the total number of stored responses.
     fn count(&self) -> usize;
+    /// Return all stored responses in insertion order.
     fn list(&self) -> Vec<StoredResponse>;
     /// List responses for a specific question batch and tenant.
+    ///
+    /// The default implementation filters [`list()`](Self::list). Custom
+    /// backends should override this for efficiency (e.g., a WHERE clause).
     fn list_by_batch(
         &self,
         question_batch_id: &QuestionBatchId,

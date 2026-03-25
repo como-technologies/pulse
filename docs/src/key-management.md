@@ -27,12 +27,9 @@ Tier 1: Customer-Managed Key (CMK)
   |
   |-- wraps/unwraps -->  Tier 2: Data Encryption Keys (DEKs)
                            |
-                           |-- DEK-responses: encrypts response data
-                           |-- DEK-questions: encrypts question content
-                           |-- DEK-orgdata: encrypts org structure/employee metadata
-                           |-- DEK-analytics: encrypts analytics cache/results
+                           |-- DEK-responses: encrypts response blobs at rest
                            |-- DEK-blindsig: encrypts the blind signature private key
-                           |-- DEK-... (additional domains as needed)
+                           |-- DEK-analytics: encrypts client-side response payloads
 ```
 
 ### 2.1 Tier 1 — Customer-Managed Key (CMK)
@@ -62,12 +59,12 @@ Each tenant has separate DEKs for different data domains. This provides defense-
 | Domain | DEK | What It Protects |
 |--------|-----|-----------------|
 | Responses | `DEK-responses` | Anonymous response blobs in the Response Store |
-| Questions | `DEK-questions` | Question content in the Question Registry |
-| Org Data | `DEK-orgdata` | Org structure, employee metadata, tags |
-| Analytics | `DEK-analytics` | Cached analytics results, aggregated data |
 | Blind Signature | `DEK-blindsig` | The Token Issuer's private signing key for this tenant |
+| Analytics | `DEK-analytics` | Client-side response payloads (Analytics Engine decrypts for aggregation) |
 
 Separate DEKs mean that compromising one domain's DEK (in its unwrapped, in-memory state) does not expose other domains.
+
+> **Future domains:** Additional domains (e.g., question content, org metadata) may be introduced as the system evolves. These are not tracked in the current roadmap.
 
 ---
 
@@ -276,14 +273,10 @@ These are distinct operations:
 | Data | Encrypted? | Under Which Key? | Stored Where? |
 |------|-----------|-----------------|---------------|
 | Response blobs | Yes (AEAD) | DEK-responses | Response Store (Signal) |
-| Question content | Yes (AEAD) | DEK-questions | Question Registry (Mgmt) |
-| Org structure / tags | Yes (AEAD) | DEK-orgdata | Org Structure Service (Mgmt) |
-| Employee directory | Yes (AEAD) | DEK-orgdata | Identity Gateway (Identity) |
-| Analytics cache | Yes (AEAD) | DEK-analytics | Analytics Engine (Signal) |
+| Client response payloads | Yes (AEAD) | DEK-analytics | Inside response blobs (client-encrypted) |
 | Blind sig private key | Yes (AEAD) | DEK-blindsig | Token Issuer (Identity) |
 | Blind sig public key | No (public) | — | Response Collector (Signal) |
 | Spent-token ledger | Hashes only | — | Response Collector (Signal) |
-| Token Issuer issuance logs | Yes (AEAD) | DEK-orgdata | Token Issuer (Identity) |
 | Wrapped DEKs | Yes (wrapped by CMK) | CMK | Tenant Key Gateway |
 | CMK | N/A | Tenant's responsibility | Tenant's KMS (external) |
 

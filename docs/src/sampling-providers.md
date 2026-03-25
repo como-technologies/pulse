@@ -55,17 +55,6 @@ Client                           Identity Zone
 {{#include ../../crates/pulse-identity/src/sampling.rs:sampling_engine_trait}}
 ```
 
-### Contract
-
-- **`assignments_for`** is called by `GET /question`. Returns all active, non-expired, non-capped assignments for the employee, each with a coarsened `segment_vector` for k-anonymity.
-
-- **`authorize_and_record_issuance`** is called by `TokenIssuer::sign_token`. The check and count increment **must be atomic** -- a single lock or database transaction must cover both. This prevents TOCTOU double-issuance where two concurrent requests both pass the frequency cap check before either records the issuance.
-
-- **Error mapping**: `SamplingError` variants map to `TokenDeniedReason` in the issuer:
-  - `NotAssigned` -> `TokenDeniedReason::NotAuthorized` (HTTP 403)
-  - `FrequencyCapExceeded` -> `TokenDeniedReason::FrequencyCap` (HTTP 403)
-  - `BatchExpired` -> `TokenDeniedReason::BatchExpired` (HTTP 403)
-
 ---
 
 ## K-Anonymity Coarsening

@@ -45,12 +45,6 @@ The URI scheme is the extension point. Adding a new provider means adding a new 
 {{#include ../../crates/pulse-signal/src/ledger.rs:spend_result}}
 ```
 
-**Contract:**
-- **Atomic** — checking and recording must be a single atomic operation. A token must never be accepted twice, even under concurrent requests.
-- **Append-only** — there is no delete or unspend operation. Once spent, always spent.
-- **`TokenHash`** — a `[u8; 32]` SHA-256 hash of the serialized token. Store as raw bytes.
-- **Error handling** — database errors are catastrophic. Use `.expect("...")` to crash the process, matching the lock-poisoning convention. A database failure during check-and-spend could allow double-voting.
-
 ### ResponseStore
 
 ```rust
@@ -58,12 +52,6 @@ The URI scheme is the extension point. Adding a new provider means adding a new 
 
 {{#include ../../crates/pulse-signal/src/store.rs:stored_response}}
 ```
-
-**Contract:**
-- **Append-only** — `store()` appends, never updates or deletes.
-- **Ordering** — `list()` should return responses in insertion order.
-- **Opaque blobs** — the Signal zone never decrypts response content. Store `encrypted_blob` as raw bytes.
-- **Error handling** — same as `SpentTokenLedger`. Database errors crash the process.
 
 ---
 
@@ -134,7 +122,7 @@ impl SpentTokenLedger for PostgresLedger {
 **Create `pulse-server/src/postgres_store.rs`:**
 
 ```rust
-use pulse_protocol::{EncryptedBlob, QuestionBatchId, UnixTimestamp};
+use pulse_protocol::{EncryptedBlob, QuestionBatchId, TenantId, UnixTimestamp};
 use pulse_signal::{ResponseStore, StoredResponse};
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -150,6 +138,7 @@ impl PostgresStore {
                 id BIGSERIAL PRIMARY KEY,
                 encrypted_blob BYTEA NOT NULL,
                 question_batch_id UUID NOT NULL,
+                tenant_id UUID NOT NULL,
                 received_at BIGINT NOT NULL
             )"
         )
@@ -165,11 +154,12 @@ impl ResponseStore for PostgresStore {
             let rt = tokio::runtime::Handle::current();
             rt.block_on(async {
                 sqlx::query(
-                    "INSERT INTO responses (encrypted_blob, question_batch_id, received_at)
-                     VALUES ($1, $2, $3)"
+                    "INSERT INTO responses (encrypted_blob, question_batch_id, tenant_id, received_at)
+                     VALUES ($1, $2, $3, $4)"
                 )
                 .bind(&response.encrypted_blob.0)
                 .bind(response.question_batch_id.0)
+                .bind(response.tenant_id.0)
                 .bind(response.received_at.0 as i64)
                 .execute(self.pool.as_ref())
                 .await
@@ -197,17 +187,18 @@ impl ResponseStore for PostgresStore {
         tokio::task::block_in_place(|| {
             let rt = tokio::runtime::Handle::current();
             rt.block_on(async {
-                sqlx::query_as::<_, (Vec<u8>, uuid::Uuid, i64)>(
-                    "SELECT encrypted_blob, question_batch_id, received_at
+                sqlx::query_as::<_, (Vec<u8>, uuid::Uuid, uuid::Uuid, i64)>(
+                    "SELECT encrypted_blob, question_batch_id, tenant_id, received_at
                      FROM responses ORDER BY id"
                 )
                 .fetch_all(self.pool.as_ref())
                 .await
                 .expect("response store db error")
                 .into_iter()
-                .map(|(blob, batch_id, received_at)| StoredResponse {
+                .map(|(blob, batch_id, tid, received_at)| StoredResponse {
                     encrypted_blob: EncryptedBlob(blob),
                     question_batch_id: QuestionBatchId::from_uuid(batch_id),
+                    tenant_id: TenantId::from_uuid(tid),
                     received_at: UnixTimestamp(received_at as u64),
                 })
                 .collect()

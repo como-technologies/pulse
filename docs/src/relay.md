@@ -85,6 +85,21 @@ This design keeps the relay minimal and avoids giving it access to cryptographic
 
 ---
 
+## Error Responses
+
+The relay can return the following HTTP status codes:
+
+| Status | Meaning |
+|--------|---------|
+| (proxied) | Signal zone's response (status + body) passed through as-is |
+| 500 | Internal error (e.g., batch channel dropped before response received) |
+| 502 | Bad gateway — upstream POST to Signal zone failed |
+| 504 | Gateway timeout — Signal zone did not respond within `PULSE_RELAY_REQUEST_TIMEOUT_SECS` |
+
+On success, the client receives the Signal zone's exact response. On relay-level failure, the client receives a plain status code with no body.
+
+---
+
 ## Deployment Considerations
 
 ### TLS Termination

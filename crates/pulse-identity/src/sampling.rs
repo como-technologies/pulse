@@ -62,16 +62,25 @@ pub enum SamplingError {
 /// Produces coarsened segment vectors for k-anonymity.
 /// Enforces frequency caps on token issuance.
 pub trait SamplingEngine: Send + Sync {
-    /// Get question assignments for an employee (used by `GET /question`).
-    /// Returns batches with coarsened segment vectors.
-    /// Excludes expired batches and batches where the frequency cap is hit.
+    /// Return all active question assignments for an employee.
+    ///
+    /// Called by `GET /question`. Returns batches with coarsened segment
+    /// vectors for k-anonymity. Excludes expired batches and batches where
+    /// the frequency cap has already been reached.
     fn assignments_for(&self, employee_id: &EmployeeId) -> Vec<SamplingDecision>;
 
-    /// Atomically authorize issuance AND record it (used by `POST /token/sign`).
+    /// Atomically authorize issuance AND record it.
     ///
-    /// Checks: assignment exists, frequency cap, batch not expired.
-    /// On `Ok`, the issuance count is incremented. The check and increment
-    /// are atomic to prevent TOCTOU double-issuance.
+    /// Called by `POST /token/sign` (via [`TokenIssuer::sign_token`]).
+    /// Checks: assignment exists, batch not expired, frequency cap not hit.
+    /// On `Ok`, the issuance count is incremented. **The check and increment
+    /// must be atomic** — a single lock or database transaction must cover
+    /// both to prevent TOCTOU double-issuance.
+    ///
+    /// Error mapping to HTTP:
+    /// - [`SamplingError::NotAssigned`] → `TokenDeniedReason::NotAuthorized` (403)
+    /// - [`SamplingError::FrequencyCapExceeded`] → `TokenDeniedReason::FrequencyCap` (403)
+    /// - [`SamplingError::BatchExpired`] → `TokenDeniedReason::BatchExpired` (403)
     fn authorize_and_record_issuance(
         &self,
         employee_id: &EmployeeId,

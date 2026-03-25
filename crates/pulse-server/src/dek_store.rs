@@ -3,18 +3,26 @@ use std::sync::Mutex;
 
 use pulse_protocol::TenantId;
 
-/// Domain that a DEK protects. Each domain has its own independent DEK per tenant,
-/// enabling fine-grained crypto-shredding (e.g., delete response DEKs but keep
-/// blind-sig DEKs during a key rotation).
+/// Domain that a DEK protects. Each domain has its own independent DEK per
+/// tenant, enabling fine-grained crypto-shredding (e.g., delete response DEKs
+/// but keep blind-sig DEKs during a key rotation).
+// ANCHOR: dek_domain
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DekDomain {
-    /// DEK for encrypting/decrypting stored response blobs (at-rest encryption).
+    /// 32-byte AES-256 key that encrypts response blobs before they reach
+    /// the inner [`ResponseStore`](pulse_signal::ResponseStore). Used by
+    /// [`EncryptingResponseStore`](crate::encrypting_store::EncryptingResponseStore)
+    /// for at-rest envelope encryption.
     Responses,
-    /// DEK for encrypting/decrypting blind-signature key material at rest.
+    /// 32-byte AES-256 key that encrypts blind-signature key material at
+    /// rest (private signing keys during storage and backup).
     BlindSig,
-    /// DEK for client-side response payload encryption (Analytics Engine decrypts).
+    /// 32-byte AES-256 key for client-side response payload encryption.
+    /// Clients encrypt [`ResponsePayload`](pulse_protocol::messages::ResponsePayload)
+    /// under this key; the Analytics Engine decrypts for aggregation.
     Analytics,
 }
+// ANCHOR_END: dek_domain
 
 /// Stores wrapped (encrypted) DEKs, keyed by (tenant, domain).
 ///

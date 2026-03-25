@@ -173,7 +173,7 @@ Where:
 - `PRF` is a pseudorandom function (e.g., HMAC-SHA256)
 - `employee_secret` is a stable secret derived from the employee's identity credentials, stored locally on the client
 - `tenant_id` prevents cross-tenant pseudonym correlation
-- `epoch_id` is a time-based epoch identifier (e.g., "2026-Q1") that rotates the pseudonym periodically
+- `epoch_id` is a time-based epoch identifier (e.g., `"epoch-7"`) that rotates the pseudonym periodically
 
 **Properties:**
 - Deterministic: same employee + same tenant + same epoch = same pseudonym
@@ -190,7 +190,8 @@ response_blob = Encrypt(DEK, {
     response_type,
     response_data,
     pseudonym,
-    epoch_id
+    epoch_id,
+    segment_vector
 })
 ```
 
@@ -206,7 +207,7 @@ Pseudonyms rotate on a configurable epoch to limit re-identification risk from b
 | Parameter | Description | Example |
 |-----------|-------------|---------|
 | `epoch_duration` | How long a pseudonym is stable | 90 days (quarterly) |
-| `epoch_id_format` | How the epoch is identified | "2026-Q1", "2026-Q2", ... |
+| `epoch_id_format` | How the epoch is identified | `"epoch-0"`, `"epoch-1"`, ... (computed as `epoch-{unix_timestamp / duration_secs}`) |
 
 **Cross-epoch analysis:** When a pseudonym rotates, the Analytics Engine can no longer link responses across epochs for a given individual. Aggregate trends still work (they don't depend on individual linkage). Individual trajectories are visible within an epoch but not across epochs.
 
@@ -306,6 +307,8 @@ All protocol messages are serialized with [postcard](https://docs.rs/postcard) b
 | Relay → Collector | (opaque bytes) | Same payload, source identity stripped. Relay does not deserialize. |
 | Collector → Client | `ResponseAck` | Accepted (empty). |
 | Collector → Client | `ResponseReject` | `reason`: `InvalidSignature`, `TokenExpired`, `TokenAlreadySpent`, `BatchMismatch`, `TenantMismatch`, or `Malformed` |
+
+Success responses (`TokenResponse`, `QuestionDelivery`, `ResponseAck`) use postcard binary. Denials and rejections (`TokenDenied`, `ResponseReject`) are returned as JSON error responses with `{ "code": "...", "message": "..." }` shape — see [Error Handling](error-handling-and-tracing.md).
 
 Message types are defined in `pulse-protocol`. See the [Crate Structure](crate-structure.md) for module layout.
 
