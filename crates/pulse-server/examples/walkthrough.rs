@@ -449,14 +449,24 @@ fn main() {
 
     println!("  ResponseSubmit {{");
     println!("    token:             {} bytes", submit.token.0.len());
+    println!("      ^ The UNBLINDED TokenPayload from Step 1 (serialized).");
+    println!("        Contains batch_id, segments, expiry, nonce.");
+    println!("        This is the first time the Signal zone sees the real token.");
     println!("    signature:         {} bytes", submit.signature.0.len());
-    println!("    key_version:       1");
+    println!("      ^ The UNBLINDED signature from Step 4. Proves the Token");
+    println!("        Issuer authorized this token — without revealing WHO.");
+    println!("    msg_randomizer:    (from blinding process, needed for verification)");
+    println!("    key_version:       1  (which signing key to verify against)");
     println!("    question_batch_id: {batch_id}");
     println!("    tenant_id:         {tenant_id}");
+    println!("      ^ Echoed from the token for quick validation before full");
+    println!("        deserialization.");
     println!(
         "    response_blob:     {} bytes (encrypted)",
         submit.response_blob.0.len()
     );
+    println!("      ^ Encrypted response from Step 5. The Signal zone stores");
+    println!("        this as opaque bytes — it cannot read the content.");
     println!("  }}");
 
     // Step 7: Signal zone validates
