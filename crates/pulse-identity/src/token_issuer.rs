@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use pulse_crypto::BlindMessage;
 use pulse_crypto::blind_sig;
 use pulse_protocol::messages::{TokenDeniedReason, TokenRequest, TokenResponse};
-use pulse_protocol::{BlindSig, QuestionBatchId, TenantId, UnixTimestamp};
+use pulse_protocol::{BlindSig, QuestionBatchId, Sensitive, TenantId, UnixTimestamp};
 
 use crate::sampling::{SamplingEngine, SamplingError};
 use crate::tenant_keys::{TenantKeyError, TenantSigningKeyStore};
@@ -19,6 +19,8 @@ use crate::tenant_keys::{TenantKeyError, TenantSigningKeyStore};
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct EmployeeId(pub String);
+
+impl Sensitive for EmployeeId {}
 
 impl fmt::Debug for EmployeeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
