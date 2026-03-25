@@ -213,6 +213,15 @@ fn main() {
     println!("The client is authenticated. The Identity zone knows this");
     println!("is \"alice\" (backend team).");
     println!();
+    println!("A TOKEN is a cryptographic authorization claim that the client");
+    println!("builds locally. It bundles the question batch ID, coarsened");
+    println!("segments, expiry, and a random nonce. The client will ask the");
+    println!("Token Issuer to BLIND-SIGN it — meaning the Issuer signs the");
+    println!("token without seeing its contents. Later, the client submits");
+    println!("the token + signature anonymously to the Signal zone, which");
+    println!("can verify the signature (proving authorization) without");
+    println!("knowing who the signer authorized.");
+    println!();
     println!("The client received question + coarsened segment_vector from");
     println!("GET /question. Now it constructs a token with those segments.");
 
