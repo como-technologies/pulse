@@ -123,7 +123,21 @@ The Response Collector maintains a ledger of spent token hashes:
 - Ledger entries can be pruned after the token's expiry timestamp (expired tokens would fail the expiry check regardless)
 - The ledger must be strongly consistent — concurrent submissions of the same token must not both succeed
 
-### 2.6 Scheme Selection (Open)
+### 2.6 Client Token Durability
+
+The frequency cap is consumed atomically at issuance time — once the Token Issuer signs a blinded token for an employee+batch, the Sampling Engine records the issuance and will deny subsequent requests. This means the blind signature returned to the client is the employee's **only** credential for that batch.
+
+If the client loses the token material (unblinded token `T`, signature `S`, message randomizer) before successfully submitting to the Signal zone, the employee cannot participate in that batch. No re-issuance is possible.
+
+**Client requirement:** The client must durably persist all token material — `T`, `S`, and `msg_randomizer` — from the moment it receives the blind signature until it receives a successful `ResponseAck` (HTTP 200) from the Signal zone. Suitable storage includes the platform's secure keychain, encrypted local database, or equivalent durable store.
+
+Key properties that make retry safe:
+
+- **Idempotent rejection:** If the client submits and the response is accepted but the client doesn't receive the ACK (e.g., network timeout), a retry will be rejected with `TokenAlreadySpent` — the response was already recorded. The client can treat this as success.
+- **Expiry-bounded validity:** The token remains valid until its embedded `expiry` timestamp. The client can retry at any point before expiry.
+- **Post-submission cleanup:** After receiving `ResponseAck` (or `TokenAlreadySpent`), the client should delete the stored token material. It is single-use — the spent-token ledger prevents replay regardless.
+
+### 2.7 Scheme Selection (Open)
 
 Several blind signature schemes exist. The choice has significant implications:
 
