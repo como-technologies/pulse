@@ -142,8 +142,8 @@ mod tests {
             blinded_token: BlindedToken(vec![1, 2, 3, 4]),
             question_batch_id: QuestionBatchId::new(),
         };
-        let json = serde_json::to_string(&req).unwrap();
-        let recovered: TokenRequest = serde_json::from_str(&json).unwrap();
+        let bytes = postcard::to_allocvec(&req).unwrap();
+        let recovered: TokenRequest = postcard::from_bytes(&bytes).unwrap();
         assert_eq!(req.blinded_token, recovered.blinded_token);
         assert_eq!(req.question_batch_id, recovered.question_batch_id);
     }
@@ -159,8 +159,8 @@ mod tests {
             tenant_id: TenantId::new(),
             response_blob: EncryptedBlob(vec![0xDE, 0xAD]),
         };
-        let json = serde_json::to_string(&submit).unwrap();
-        let recovered: ResponseSubmit = serde_json::from_str(&json).unwrap();
+        let bytes = postcard::to_allocvec(&submit).unwrap();
+        let recovered: ResponseSubmit = postcard::from_bytes(&bytes).unwrap();
         assert_eq!(submit.token, recovered.token);
         assert_eq!(submit.signature, recovered.signature);
         assert_eq!(submit.msg_randomizer, recovered.msg_randomizer);
@@ -176,19 +176,20 @@ mod tests {
             response_data: ResponseData::Scale5(4),
             segment_vector: vec![SegmentLabel::from("engineering")],
         };
-        let json = serde_json::to_string(&payload).unwrap();
-        let recovered: ResponsePayload = serde_json::from_str(&json).unwrap();
+        let bytes = postcard::to_allocvec(&payload).unwrap();
+        let recovered: ResponsePayload = postcard::from_bytes(&bytes).unwrap();
         assert_eq!(recovered.pseudonym, payload.pseudonym);
         assert_eq!(recovered.epoch_id, payload.epoch_id);
         assert_eq!(recovered.segment_vector, payload.segment_vector);
     }
 
     #[test]
-    fn reject_reasons_serialize() {
+    fn reject_reason_round_trip() {
         let reject = ResponseReject {
             reason: RejectReason::TokenAlreadySpent,
         };
-        let json = serde_json::to_string(&reject).unwrap();
-        assert!(json.contains("TokenAlreadySpent"));
+        let bytes = postcard::to_allocvec(&reject).unwrap();
+        let recovered: ResponseReject = postcard::from_bytes(&bytes).unwrap();
+        assert!(matches!(recovered.reason, RejectReason::TokenAlreadySpent));
     }
 }

@@ -102,7 +102,7 @@ async fn start_relay(signal_url: &str, batch_size: usize) -> String {
 
 #[tokio::test]
 async fn basic_forwarding() {
-    let (signal_url, mock) = start_mock_signal(StatusCode::OK, r#"{"status":"accepted"}"#).await;
+    let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
     let relay_url = start_relay(&signal_url, 1).await;
 
     let client = reqwest::Client::new();
@@ -114,8 +114,6 @@ async fn basic_forwarding() {
         .unwrap();
 
     assert_eq!(resp.status(), 200);
-    let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["status"], "accepted");
 
     let requests = mock.requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -124,7 +122,7 @@ async fn basic_forwarding() {
 
 #[tokio::test]
 async fn no_client_headers_forwarded() {
-    let (signal_url, mock) = start_mock_signal(StatusCode::OK, r#"{"status":"accepted"}"#).await;
+    let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
     let relay_url = start_relay(&signal_url, 1).await;
 
     let client = reqwest::Client::new();
@@ -171,7 +169,7 @@ async fn no_client_headers_forwarded() {
 
 #[tokio::test]
 async fn batching_delivers_all_requests() {
-    let (signal_url, mock) = start_mock_signal(StatusCode::OK, r#"{"status":"accepted"}"#).await;
+    let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
     // batch_size=2 so two requests trigger a flush
     let relay_url = start_relay(&signal_url, 2).await;
 
@@ -225,7 +223,7 @@ async fn upstream_error_forwarded() {
 
 #[tokio::test]
 async fn body_opacity() {
-    let (signal_url, mock) = start_mock_signal(StatusCode::OK, r#"{"status":"accepted"}"#).await;
+    let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
     let relay_url = start_relay(&signal_url, 1).await;
 
     // Send non-JSON binary bytes — relay should forward unchanged

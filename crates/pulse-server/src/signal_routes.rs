@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{Json, extract::State, response::IntoResponse};
 use serde::Serialize;
 
-use pulse_protocol::messages::{RejectReason, ResponseSubmit};
+use pulse_protocol::messages::{RejectReason, ResponseAck, ResponseSubmit};
 use pulse_protocol::{QuestionBatchId, TenantId, UnixTimestamp};
 use pulse_signal::CollectorError;
 
 use crate::SignalState;
+use crate::binary::Binary;
 use crate::error::ApiError;
 
 /// Accept an anonymous response submission — NO authentication required.
@@ -20,7 +21,7 @@ pub async fn submit_response(
     State(state): State<Arc<SignalState>>,
     body: Bytes,
 ) -> impl IntoResponse {
-    let submit: ResponseSubmit = match serde_json::from_slice(&body) {
+    let submit: ResponseSubmit = match postcard::from_bytes(&body) {
         Ok(s) => s,
         Err(_) => {
             return ApiError::BadRequest("malformed request body".to_string()).into_response();
@@ -28,11 +29,7 @@ pub async fn submit_response(
     };
 
     match state.collector.accept(&submit) {
-        Ok(()) => (
-            StatusCode::OK,
-            Json(serde_json::json!({"status": "accepted"})),
-        )
-            .into_response(),
+        Ok(()) => Binary(ResponseAck).into_response(),
         Err(e) => map_collector_error(e).into_response(),
     }
 }

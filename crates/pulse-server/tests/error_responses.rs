@@ -12,9 +12,12 @@ use tokio::net::TcpListener;
 
 use pulse_crypto::{aead, blind_sig};
 use pulse_identity::{InMemorySessionStore, QuestionBatch, SamplingEngine, TokenIssuer};
-use pulse_protocol::messages::ResponseType;
+use pulse_protocol::messages::{ResponseSubmit, ResponseType, TokenRequest, TokenResponse};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
-use pulse_protocol::{KeyVersion, Nonce, QuestionBatchId, QuestionText, TenantId, UnixTimestamp};
+use pulse_protocol::{
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, QuestionBatchId, QuestionText, SignatureBytes,
+    TenantId, UnixTimestamp,
+};
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
 use pulse_server::dev_auth::DevAuthenticator;
@@ -130,28 +133,23 @@ async fn sign_token_flow(
 
     let blinding_result = blind_sig::blind(pk, &token_bytes.0).unwrap();
 
-    let sign_resp: Value = client
+    let token_request = TokenRequest {
+        blinded_token: BlindedToken(blinding_result.blind_message.0.clone()),
+        question_batch_id: batch_id,
+    };
+    let sign_resp_bytes = client
         .post(format!("{identity_url}/token/sign"))
         .header("Authorization", format!("Bearer {session_token}"))
-        .json(&serde_json::json!({
-            "blinded_token": blinding_result.blind_message.0,
-            "question_batch_id": batch_id.0,
-        }))
+        .body(postcard::to_allocvec(&token_request).unwrap())
         .send()
         .await
         .unwrap()
-        .json()
+        .bytes()
         .await
         .unwrap();
+    let token_response: TokenResponse = postcard::from_bytes(&sign_resp_bytes).unwrap();
 
-    let blind_sig_bytes: Vec<u8> = sign_resp["blind_signature"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_u64().unwrap() as u8)
-        .collect();
-
-    let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
+    let blind_sig_val = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
     let sig = blind_sig::finalize(pk, &blind_sig_val, &blinding_result, &token_bytes.0).unwrap();
 
     let msg_randomizer = blinding_result.msg_randomizer.map(|r| r.0);
@@ -168,20 +166,21 @@ async fn duplicate_submission_returns_422_with_error_code() {
     let (token_bytes, sig, msg_randomizer) =
         sign_token_flow(&identity_url, &pk, batch_id, tenant_id).await;
 
-    let payload = serde_json::json!({
-        "token": token_bytes.0,
-        "signature": sig.0,
-        "msg_randomizer": msg_randomizer,
-        "key_version": 1,
-        "question_batch_id": batch_id.0,
-        "tenant_id": tenant_id.0,
-        "response_blob": aead::encrypt(&encryption_key, b"4").unwrap(),
-    });
+    let submit = ResponseSubmit {
+        token: token_bytes,
+        signature: SignatureBytes(sig.0.clone()),
+        msg_randomizer,
+        key_version: KeyVersion(1),
+        question_batch_id: batch_id,
+        tenant_id,
+        response_blob: EncryptedBlob(aead::encrypt(&encryption_key, b"4").unwrap()),
+    };
+    let submit_bytes = postcard::to_allocvec(&submit).unwrap();
 
     // First submission succeeds
     let resp = client
         .post(format!("{signal_url}/response"))
-        .json(&payload)
+        .body(submit_bytes.clone())
         .send()
         .await
         .unwrap();
@@ -190,7 +189,7 @@ async fn duplicate_submission_returns_422_with_error_code() {
     // Duplicate returns 422 with structured error
     let dup = client
         .post(format!("{signal_url}/response"))
-        .json(&payload)
+        .body(submit_bytes)
         .send()
         .await
         .unwrap();
@@ -216,17 +215,18 @@ async fn forged_signature_returns_422() {
     };
     let token_bytes = token.to_bytes();
 
+    let submit = ResponseSubmit {
+        token: token_bytes,
+        signature: SignatureBytes(vec![0xDE; 256]),
+        msg_randomizer: None,
+        key_version: KeyVersion(1),
+        question_batch_id: batch_id,
+        tenant_id,
+        response_blob: EncryptedBlob(vec![0x00]),
+    };
     let resp = client
         .post(format!("{signal_url}/response"))
-        .json(&serde_json::json!({
-            "token": token_bytes.0,
-            "signature": vec![0xDEu8; 256],
-            "msg_randomizer": null,
-            "key_version": 1,
-            "question_batch_id": batch_id.0,
-            "tenant_id": tenant_id.0,
-            "response_blob": vec![0x00u8],
-        }))
+        .body(postcard::to_allocvec(&submit).unwrap())
         .send()
         .await
         .unwrap();
@@ -245,17 +245,18 @@ async fn batch_mismatch_returns_422() {
     let (token_bytes, sig, msg_randomizer) =
         sign_token_flow(&identity_url, &pk, batch_id, tenant_id).await;
 
+    let submit = ResponseSubmit {
+        token: token_bytes,
+        signature: SignatureBytes(sig.0.clone()),
+        msg_randomizer,
+        key_version: KeyVersion(1),
+        question_batch_id: wrong_batch_id,
+        tenant_id,
+        response_blob: EncryptedBlob(vec![0x00]),
+    };
     let resp = client
         .post(format!("{signal_url}/response"))
-        .json(&serde_json::json!({
-            "token": token_bytes.0,
-            "signature": sig.0,
-            "msg_randomizer": msg_randomizer,
-            "key_version": 1,
-            "question_batch_id": wrong_batch_id.0,
-            "tenant_id": tenant_id.0,
-            "response_blob": vec![0x00u8],
-        }))
+        .body(postcard::to_allocvec(&submit).unwrap())
         .send()
         .await
         .unwrap();
@@ -309,13 +310,14 @@ async fn invalid_session_token_returns_401() {
     let client = reqwest::Client::new();
 
     // POST /token/sign with a fake session token
+    let fake_request = TokenRequest {
+        blinded_token: BlindedToken(vec![0u8; 256]),
+        question_batch_id: QuestionBatchId::new(),
+    };
     let resp = client
         .post(format!("{identity_url}/token/sign"))
         .header("Authorization", "Bearer fake-token-value")
-        .json(&serde_json::json!({
-            "blinded_token": vec![0u8; 256],
-            "question_batch_id": QuestionBatchId::new().0,
-        }))
+        .body(postcard::to_allocvec(&fake_request).unwrap())
         .send()
         .await
         .unwrap();
@@ -342,17 +344,18 @@ async fn error_response_has_consistent_structure() {
     };
     let token_bytes = token.to_bytes();
 
+    let submit = ResponseSubmit {
+        token: token_bytes,
+        signature: SignatureBytes(vec![0xDE; 256]),
+        msg_randomizer: None,
+        key_version: KeyVersion(1),
+        question_batch_id: batch_id,
+        tenant_id,
+        response_blob: EncryptedBlob(vec![0x00]),
+    };
     let resp = client
         .post(format!("{signal_url}/response"))
-        .json(&serde_json::json!({
-            "token": token_bytes.0,
-            "signature": vec![0xDEu8; 256],
-            "msg_randomizer": null,
-            "key_version": 1,
-            "question_batch_id": batch_id.0,
-            "tenant_id": tenant_id.0,
-            "response_blob": vec![0x00u8],
-        }))
+        .body(postcard::to_allocvec(&submit).unwrap())
         .send()
         .await
         .unwrap();

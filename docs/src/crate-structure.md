@@ -18,7 +18,7 @@ Low-level cryptographic operations. Blind signatures (RSA, per RFC 9474), AES-25
 
 ## pulse-protocol
 
-Shared wire types: `TokenPayload`, Phase 1 and Phase 2 message types. Serde-serializable. Defines the contract between client and server without coupling to either side.
+Shared wire types: `TokenPayload`, Phase 1 and Phase 2 message types. Serialized with [postcard](https://docs.rs/postcard) binary format via serde. Defines the contract between client and server without coupling to either side.
 
 ## pulse-identity
 

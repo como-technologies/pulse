@@ -80,7 +80,7 @@ impl AnalyticsEngine {
     fn decrypt_response(analytics_dek: &[u8; 32], blob: &[u8]) -> Result<ResponsePayload, String> {
         let plaintext =
             pulse_crypto::aead::decrypt(analytics_dek, blob).map_err(|e| e.to_string())?;
-        serde_json::from_slice(&plaintext).map_err(|e| e.to_string())
+        postcard::from_bytes(&plaintext).map_err(|e| e.to_string())
     }
 
     /// Aggregate responses for a question batch.
@@ -236,8 +236,8 @@ mod tests {
         batch_id: QuestionBatchId,
         tenant_id: TenantId,
     ) {
-        let json = serde_json::to_vec(payload).unwrap();
-        let encrypted = pulse_crypto::aead::encrypt(dek, &json).unwrap();
+        let bytes = postcard::to_allocvec(payload).unwrap();
+        let encrypted = pulse_crypto::aead::encrypt(dek, &bytes).unwrap();
         store.store(StoredResponse {
             encrypted_blob: EncryptedBlob(encrypted),
             question_batch_id: batch_id,

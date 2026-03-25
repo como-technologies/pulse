@@ -46,8 +46,8 @@ fn setup(k_threshold: usize) -> TestSetup {
 }
 
 fn encrypt_payload(dek: &[u8; 32], payload: &ResponsePayload) -> Vec<u8> {
-    let json = serde_json::to_vec(payload).unwrap();
-    aead::encrypt(dek, &json).unwrap()
+    let bytes = postcard::to_allocvec(payload).unwrap();
+    aead::encrypt(dek, &bytes).unwrap()
 }
 
 fn store_response(

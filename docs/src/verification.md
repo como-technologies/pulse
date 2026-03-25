@@ -46,14 +46,14 @@ The dev configuration uses:
 Test the full flow:
 
 ```sh
-# Authenticate
+# Authenticate (JSON endpoint)
 curl -s -X POST localhost:8001/auth \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"alice"}' | jq .
 
-# Get assigned questions (includes segment_vector)
-curl -s localhost:8001/question \
-  -H 'Authorization: Bearer <session_token>' | jq .
+# Get assigned questions — returns postcard binary (not JSON).
+# Protocol endpoints use postcard binary wire format; use the
+# walkthrough example or integration tests to exercise the full flow.
 ```
 
 See [Authentication Providers](authentication.md), [Sampling Engine Providers](sampling-providers.md), and [Storage Providers](storage-providers.md) for implementing production backends.

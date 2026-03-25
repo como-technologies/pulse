@@ -14,11 +14,14 @@ use tokio::net::TcpListener;
 use pulse_crypto::{aead, blind_sig};
 use pulse_identity::{InMemorySessionStore, QuestionBatch, SamplingEngine, TokenIssuer};
 use pulse_protocol::epoch::EpochConfig;
-use pulse_protocol::messages::{ResponseData, ResponsePayload, ResponseType};
+use pulse_protocol::messages::{
+    QuestionDelivery, ResponseData, ResponsePayload, ResponseSubmit, ResponseType, TokenRequest,
+    TokenResponse,
+};
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{
-    KeyVersion, Nonce, Pseudonym, QuestionBatchId, QuestionText, SegmentLabel, TenantId,
-    UnixTimestamp,
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, Pseudonym, QuestionBatchId, QuestionText,
+    SegmentLabel, SignatureBytes, TenantId, UnixTimestamp,
 };
 use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
 
@@ -134,23 +137,20 @@ async fn full_http_flow() {
         .unwrap();
     let session_token = auth_resp["session_token"].as_str().unwrap();
 
-    // 2. Get questions from Identity zone (requires auth)
-    let questions: Value = client
+    // 2. Get questions from Identity zone (requires auth) — binary response
+    let question_bytes = client
         .get(format!("{}/question", servers.identity_url))
         .header("Authorization", format!("Bearer {session_token}"))
         .send()
         .await
         .unwrap()
-        .json()
+        .bytes()
         .await
         .unwrap();
-    assert!(questions.is_array(), "expected array of questions");
-    assert_eq!(questions.as_array().unwrap().len(), 1);
-    assert_eq!(
-        questions[0]["question_batch_id"],
-        servers.batch_id.0.to_string()
-    );
-    assert!(questions[0]["segment_vector"].is_array());
+    let questions: Vec<QuestionDelivery> = postcard::from_bytes(&question_bytes).unwrap();
+    assert_eq!(questions.len(), 1);
+    assert_eq!(questions[0].question_batch_id, servers.batch_id);
+    assert!(!questions[0].segment_vector.is_empty());
 
     // 3. Create and blind a token
     let token = TokenPayload {
@@ -166,30 +166,25 @@ async fn full_http_flow() {
 
     let blinding_result = blind_sig::blind(&servers.pk, &token_bytes.0).unwrap();
 
-    // 4. Request blind signature from Identity zone
-    let sign_resp: Value = client
+    // 4. Request blind signature from Identity zone — binary request/response
+    let token_request = TokenRequest {
+        blinded_token: BlindedToken(blinding_result.blind_message.0.clone()),
+        question_batch_id: servers.batch_id,
+    };
+    let sign_resp_bytes = client
         .post(format!("{}/token/sign", servers.identity_url))
         .header("Authorization", format!("Bearer {session_token}"))
-        .json(&serde_json::json!({
-            "blinded_token": blinding_result.blind_message.0,
-            "question_batch_id": servers.batch_id.0,
-        }))
+        .body(postcard::to_allocvec(&token_request).unwrap())
         .send()
         .await
         .unwrap()
-        .json()
+        .bytes()
         .await
         .unwrap();
-
-    let blind_sig_bytes: Vec<u8> = sign_resp["blind_signature"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v.as_u64().unwrap() as u8)
-        .collect();
+    let token_response: TokenResponse = postcard::from_bytes(&sign_resp_bytes).unwrap();
 
     // 5. Unblind the signature
-    let blind_sig_val = pulse_crypto::BlindSignature(blind_sig_bytes);
+    let blind_sig_val = pulse_crypto::BlindSignature(token_response.blind_signature.0.clone());
     let sig = blind_sig::finalize(
         &servers.pk,
         &blind_sig_val,
@@ -214,28 +209,27 @@ async fn full_http_flow() {
         response_data: ResponseData::Scale5(4),
         segment_vector: vec![SegmentLabel::from("engineering")],
     };
-    let payload_json = serde_json::to_vec(&payload).unwrap();
-    let encrypted_response = aead::encrypt(&servers.analytics_dek, &payload_json).unwrap();
+    let payload_bytes = postcard::to_allocvec(&payload).unwrap();
+    let encrypted_response = aead::encrypt(&servers.analytics_dek, &payload_bytes).unwrap();
 
-    // 7. Submit to Signal zone (different URL, NO auth)
+    // 7. Submit to Signal zone (different URL, NO auth) — binary request
+    let submit = ResponseSubmit {
+        token: token_bytes.clone(),
+        signature: SignatureBytes(sig.0.clone()),
+        msg_randomizer: blinding_result.msg_randomizer.map(|r| r.0),
+        key_version: KeyVersion(1),
+        question_batch_id: servers.batch_id,
+        tenant_id: servers.tenant_id,
+        response_blob: EncryptedBlob(encrypted_response.clone()),
+    };
     let submit_resp = client
         .post(format!("{}/response", servers.signal_url))
-        .json(&serde_json::json!({
-            "token": token_bytes.0,
-            "signature": sig.0,
-            "msg_randomizer": blinding_result.msg_randomizer.map(|r| r.0),
-            "key_version": 1,
-            "question_batch_id": servers.batch_id.0,
-            "tenant_id": servers.tenant_id.0,
-            "response_blob": encrypted_response,
-        }))
+        .body(postcard::to_allocvec(&submit).unwrap())
         .send()
         .await
         .unwrap();
 
     assert_eq!(submit_resp.status(), 200);
-    let body: Value = submit_resp.json().await.unwrap();
-    assert_eq!(body["status"], "accepted");
 
     // 8. Verify response is stored
     let debug: Value = client
@@ -271,15 +265,7 @@ async fn full_http_flow() {
     // 10. Duplicate submission should fail with 422 and structured error
     let dup_resp = client
         .post(format!("{}/response", servers.signal_url))
-        .json(&serde_json::json!({
-            "token": token_bytes.0,
-            "signature": sig.0,
-            "msg_randomizer": blinding_result.msg_randomizer.map(|r| r.0),
-            "key_version": 1,
-            "question_batch_id": servers.batch_id.0,
-            "tenant_id": servers.tenant_id.0,
-            "response_blob": encrypted_response,
-        }))
+        .body(postcard::to_allocvec(&submit).unwrap())
         .send()
         .await
         .unwrap();
@@ -305,23 +291,25 @@ async fn questions_include_segment_vector() {
         .unwrap();
     let session_token = auth_resp["session_token"].as_str().unwrap();
 
-    // Get questions — should include segment_vector
-    let questions: Value = client
+    // Get questions — should include segment_vector (binary response)
+    let question_bytes = client
         .get(format!("{}/question", servers.identity_url))
         .header("Authorization", format!("Bearer {session_token}"))
         .send()
         .await
         .unwrap()
-        .json()
+        .bytes()
         .await
         .unwrap();
+    let questions: Vec<QuestionDelivery> = postcard::from_bytes(&question_bytes).unwrap();
 
-    assert!(questions.is_array());
-    let q = &questions[0];
-    assert_eq!(q["question_batch_id"], servers.batch_id.0.to_string());
-    let segments = q["segment_vector"].as_array().unwrap();
-    assert!(!segments.is_empty(), "segment_vector must not be empty");
-    assert_eq!(segments[0], "company"); // DevSamplingEngine default
+    assert_eq!(questions.len(), 1);
+    assert_eq!(questions[0].question_batch_id, servers.batch_id);
+    assert!(!questions[0].segment_vector.is_empty());
+    assert_eq!(
+        questions[0].segment_vector[0],
+        SegmentLabel::from("company")
+    );
 }
 
 #[tokio::test]
@@ -341,7 +329,7 @@ async fn sign_denied_frequency_cap() {
         .unwrap();
     let session_token = auth_resp["session_token"].as_str().unwrap();
 
-    // First signing request — should succeed
+    // First signing request — should succeed (binary request)
     let token1 = TokenPayload {
         nonce: Nonce::random(),
         question_batch_id: servers.batch_id,
@@ -354,13 +342,14 @@ async fn sign_denied_frequency_cap() {
     let token_bytes1 = token1.to_bytes();
     let blinding1 = blind_sig::blind(&servers.pk, &token_bytes1.0).unwrap();
 
+    let req1 = TokenRequest {
+        blinded_token: BlindedToken(blinding1.blind_message.0.clone()),
+        question_batch_id: servers.batch_id,
+    };
     let resp1 = client
         .post(format!("{}/token/sign", servers.identity_url))
         .header("Authorization", format!("Bearer {session_token}"))
-        .json(&serde_json::json!({
-            "blinded_token": blinding1.blind_message.0,
-            "question_batch_id": servers.batch_id.0,
-        }))
+        .body(postcard::to_allocvec(&req1).unwrap())
         .send()
         .await
         .unwrap();
@@ -379,13 +368,14 @@ async fn sign_denied_frequency_cap() {
     let token_bytes2 = token2.to_bytes();
     let blinding2 = blind_sig::blind(&servers.pk, &token_bytes2.0).unwrap();
 
+    let req2 = TokenRequest {
+        blinded_token: BlindedToken(blinding2.blind_message.0.clone()),
+        question_batch_id: servers.batch_id,
+    };
     let resp2 = client
         .post(format!("{}/token/sign", servers.identity_url))
         .header("Authorization", format!("Bearer {session_token}"))
-        .json(&serde_json::json!({
-            "blinded_token": blinding2.blind_message.0,
-            "question_batch_id": servers.batch_id.0,
-        }))
+        .body(postcard::to_allocvec(&req2).unwrap())
         .send()
         .await
         .unwrap();

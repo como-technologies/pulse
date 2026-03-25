@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 
 use pulse_identity::{AuthError, IssuerError};
 use pulse_protocol::messages::{QuestionDelivery, TokenDeniedReason, TokenRequest};
-use pulse_protocol::{BlindedToken, QuestionBatchId};
 
 use crate::IdentityState;
 use crate::auth_extractor::AuthenticatedEmployee;
+use crate::binary::Binary;
 use crate::error::ApiError;
 
 // ── Auth ──
@@ -48,9 +48,9 @@ pub async fn auth(
 pub async fn get_questions(
     employee: AuthenticatedEmployee,
     State(state): State<Arc<IdentityState>>,
-) -> Json<Vec<QuestionDelivery>> {
+) -> Binary<Vec<QuestionDelivery>> {
     let assignments = state.sampling_engine.assignments_for(&employee.0);
-    Json(
+    Binary(
         assignments
             .into_iter()
             .map(|d| QuestionDelivery {
@@ -66,35 +66,17 @@ pub async fn get_questions(
 
 // ── Token signing ──
 
-#[derive(Deserialize)]
-pub struct SignRequest {
-    pub blinded_token: BlindedToken,
-    pub question_batch_id: QuestionBatchId,
-}
-
 /// Sign a blinded token. Employee identity comes from the session, not the request body.
 pub async fn sign_token(
     employee: AuthenticatedEmployee,
     State(state): State<Arc<IdentityState>>,
-    Json(req): Json<SignRequest>,
+    Binary(token_request): Binary<TokenRequest>,
 ) -> impl IntoResponse {
-    let token_request = TokenRequest {
-        blinded_token: req.blinded_token,
-        question_batch_id: req.question_batch_id,
-    };
-
     match state
         .issuer
         .sign_token(&state.tenant_id, &employee.0, &token_request)
     {
-        Ok(resp) => (
-            StatusCode::OK,
-            Json(serde_json::json!({
-                "blind_signature": resp.blind_signature,
-                "key_version": resp.key_version,
-            })),
-        )
-            .into_response(),
+        Ok(resp) => Binary(resp).into_response(),
         Err(e) => map_issuer_error(e).into_response(),
     }
 }

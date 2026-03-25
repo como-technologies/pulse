@@ -9,6 +9,7 @@ use crate::analytics::AnalyticsEngine;
 pub mod analytics;
 pub mod analytics_routes;
 pub mod auth_extractor;
+pub mod binary;
 pub mod cmk;
 pub mod config;
 pub mod dek_store;

@@ -45,12 +45,12 @@ pub struct TokenPayload {
 impl TokenPayload {
     /// Serialize the token to bytes for blind signing.
     pub fn to_bytes(&self) -> TokenBytes {
-        TokenBytes(serde_json::to_vec(self).expect("token serialization cannot fail"))
+        TokenBytes(postcard::to_allocvec(self).expect("token serialization cannot fail"))
     }
 
     /// Deserialize a token from bytes.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(bytes)
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
+        postcard::from_bytes(bytes)
     }
 
     /// Check whether the token has expired relative to the given timestamp.

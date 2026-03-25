@@ -773,8 +773,8 @@ fn main() {
             response_data: ResponseData::Scale5(i + 2), // scores: 2,3,4,5,6→clamped
             segment_vector: vec![SegmentLabel::from("engineering")],
         };
-        let json = serde_json::to_vec(&payload).unwrap();
-        let encrypted = aead::encrypt(&analytics_dek, &json).unwrap();
+        let payload_bytes = postcard::to_allocvec(&payload).unwrap();
+        let encrypted = aead::encrypt(&analytics_dek, &payload_bytes).unwrap();
 
         analytics_store.store(pulse_signal::StoredResponse {
             encrypted_blob: EncryptedBlob(encrypted),

@@ -122,7 +122,7 @@ All public functions return `Result<T, CrateError>`. Domain crates do not log â€
 
 | Status | Meaning | Example codes |
 |--------|---------|---------------|
-| 400 | Malformed request (bad JSON, missing fields) | `BAD_REQUEST` |
+| 400 | Malformed request body | `BAD_REQUEST` |
 | 401 | Authentication failure | `UNAUTHORIZED` |
 | 403 | Policy denial | `TOKEN_DENIED_FREQUENCY_CAP`, `TOKEN_DENIED_NOT_AUTHORIZED`, `TOKEN_DENIED_BATCH_EXPIRED` |
 | 422 | Semantically invalid | `RESPONSE_INVALID_SIGNATURE`, `RESPONSE_TOKEN_EXPIRED`, `RESPONSE_TOKEN_ALREADY_SPENT`, `RESPONSE_BATCH_MISMATCH`, `RESPONSE_TENANT_MISMATCH`, `RESPONSE_MALFORMED` |
