@@ -221,15 +221,31 @@ For intermittently connected clients:
 5. On reconnect, client drains queue, submitting each response
 6. Spent-token ledger makes retries idempotent (duplicate submissions are safely rejected)
 
-### 8.4 Capability Negotiation
+### 8.4 Control Plane and Capability Negotiation
 
-On connection, clients declare: protocol version, push/pull preference, supported response types, max payload size, store-and-forward support, attestation class. The server tailors question delivery accordingly — it will not send a free-text question to a 5-button IoT device.
+The protocol separates two communication planes:
+
+**Data plane** — the existing two-phase protocol (token issuance and anonymous response submission). Carries application data. Serialized with [postcard](https://docs.rs/postcard) binary format.
+
+**Control plane** — an authenticated management channel in the Identity zone for client lifecycle operations. The control plane knows WHO the client is and can deliver platform-specific instructions.
+
+**Version negotiation.** On authentication, clients declare their protocol version. The server checks against a minimum supported version and rejects outdated clients with an update hint. This gates token issuance — if a client passes the version check, any token it holds is from a compatible version. The Signal zone never needs version negotiation; a valid token means the client already passed the gate.
+
+**Platform-aware update signaling.** Clients report platform metadata (OS, device class) during authentication. When the server rejects a client for version mismatch, the update hint is platform-specific: a UEM push command for managed desktops, an app store deeplink for mobile, or a firmware OTA URL for embedded devices.
+
+**Capability advertisement.** Beyond versioning, clients declare: push/pull preference, supported response types, max payload size, store-and-forward support, and attestation class. The server tailors question delivery accordingly — it will not send a free-text question to a 5-button IoT device.
+
+**Extensibility.** The control plane uses typed messages with a discriminant, so future capabilities (configuration delivery, fleet health reporting, poll scheduling) can be added without protocol changes. Version negotiation is the first capability; the envelope is designed for growth.
+
+**Trust zone mapping.** The control plane lives entirely in the Identity zone — it requires authentication and is identity-aware. The data plane spans both zones (Phase 1 in Identity, Phase 2 in Signal via the relay). The relay remains fully opaque and has no control plane awareness.
 
 ### 8.5 Protocol Characteristics
 
-- Binary, compact, versioned — every byte matters for IoT/wearables
-- Opaque payloads — the protocol transports bytes; interpretation lives at the edges
-- Response-type-agnostic — adding a new response type requires no protocol changes
+- **Postcard binary format** — protocol messages are serialized with [postcard](https://docs.rs/postcard), a compact `no_std`-compatible binary format via serde. JSON is retained for auth, debug, analytics, and error responses.
+- **Self-describing version envelope** — every postcard message carries a version byte prefix (`[major | minor | payload]`) so receivers can dispatch to the correct deserializer without out-of-band context.
+- **Opaque payloads** — the protocol transports bytes; interpretation lives at the edges
+- **Response-type-agnostic** — adding a new response type requires no protocol changes
+- **IoT-ready** — the compact binary format and `no_std` compatibility make it suitable for constrained devices
 
 ---
 
@@ -335,6 +351,14 @@ These properties must hold regardless of implementation choices:
 | Longitudinal tracking | Stable anonymous pseudonyms with epoch rotation | Key differentiator. Pseudonyms derived client-side, never seen by Identity. |
 | IoT identity model | Device attestation spectrum with confidence levels | Devices range from personal (high) to location (low). System models what each signal means. |
 | Network anonymity | Mandatory anonymizing relay | Signals must be completely anonymous. Insider threat resistance required. |
+| Blind signature scheme | RSA Blind Signatures per RFC 9474 | Well-studied, information-theoretic blindness, standardized. Partially blind sigs remain a future option for constrained devices. |
+| Pseudonym derivation | HMAC-SHA256 | Simple, deterministic, one-way. Anonymous credentials (DAA/Idemix) noted as future evolution. |
+| Pseudonym epoch duration | 90 days (configurable per tenant) | Balances longitudinal analysis against re-identification risk from behavioral fingerprinting. |
+| Wire format | Postcard binary with version byte prefix | Compact, `no_std`-friendly, serde-native. Version prefix enables protocol evolution. JSON retained for auth, debug, analytics, errors. |
+| Relay architecture | Single relay with batching and shuffling | Relay network remains a future option. Current design is sufficient for production launch. |
+| Client lifecycle management | Control plane in Identity zone | Authenticated management channel for version negotiation and update signaling. Extensible for config delivery, fleet health. |
+| Target client platforms | Native desktop (system tray) + mobile first | UEM-managed desktops, app-store mobile. Embedded/IoT planned for later. Web unlikely (no one browses to a polling app). |
+| Project phasing | Three-tier milestones (day-0 / day-1 / day-2) | Day-0 = working system for demos (complete). Day-1 = production readiness. Day-2 = operational maturity. See [Roadmap](roadmap.md). |
 
 ---
 
@@ -342,12 +366,10 @@ These properties must hold regardless of implementation choices:
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Blind signature scheme selection | Open | RSA-Chaum, EC variants, partially blind signatures. Affects key/token size, constrained device computation. |
-| Pseudonym derivation scheme | Open | HMAC-based, commitment-based, or anonymous credentials (DAA/Idemix). Simplicity vs. unlinkability strength. |
-| Pseudonym rotation epoch | Open | Quarterly? Configurable? Cross-epoch longitudinal analysis? |
 | Token batch pre-issuance | Open | Batch size for offline devices. Revocation on employee departure. |
 | Anonymous channel abuse mitigation | Open | DoS on the relay/collector. Proof-of-work? Rate limiting? |
-| Response type extensibility | Open | Registry, schema versioning, backward compatibility for old clients. |
-| Key rotation strategy | Open | Re-encrypt stored data vs. maintain key version history. |
-| Relay architecture | Open | Single vs. relay network. Batch/shuffle delay sizing. Preventing the relay from becoming a correlation point. |
+| Response type catalog | Partially resolved | Protocol transports opaque bytes via postcard. `ResponseType` enum exists (`Scale5`, `Binary`, `Emoji`, `FreeText`). Full catalog of validated response types TBD. |
+| Key re-encryption on rotation | Partially resolved | `KeyVersion` tracking and per-tenant keys exist. Re-encryption of stored data under new keys TBD. |
 | Attestation confidence weighting | Open | How low-confidence location signals factor into aggregate statistics. |
+| Control plane message catalog | Open | Version negotiation is first capability. Config delivery, fleet health, poll scheduling are future extensions. |
+| Relay network topology | Open | Current: single relay. Multi-relay network for high availability and geographic distribution is a future option. |

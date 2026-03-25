@@ -85,9 +85,9 @@ Integrates with external identity providers (SSO/federation) for authentication.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Response type catalog | Open | What types to support, encoding format, extensibility model |
-| Push vs. pull strategy per device class | Open | Leaning toward both; needs use-case analysis |
-| Offline sync conflict resolution | Open | How to handle edge cases in store-and-forward |
-| Question scheduling algorithm | Open | How the sampling engine selects questions and recipients |
-| Recommendation engine scope | Open | How sophisticated should automated recommendations be |
-| Notification/nudge strategy | Open | How/whether to remind employees to respond |
+| Response type catalog | Partially resolved | Protocol transports opaque bytes via postcard. `ResponseType` enum exists (`Scale5`, `Binary`, `Emoji`, `FreeText`). Full catalog of validated, research-informed types TBD. |
+| Push vs. pull strategy per device class | Open | Leaning toward both; will be informed by client SDK development. |
+| Offline sync conflict resolution | Open | How to handle edge cases in store-and-forward. |
+| Question scheduling algorithm | Open | How the sampling engine selects questions and recipients. |
+| Recommendation engine scope | Open | How sophisticated should automated recommendations be. |
+| Notification/nudge strategy | Open | How/whether to remind employees to respond (system cannot track individual response status — only broadcast reminders). |

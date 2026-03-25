@@ -137,17 +137,19 @@ Key properties that make retry safe:
 - **Expiry-bounded validity:** The token remains valid until its embedded `expiry` timestamp. The client can retry at any point before expiry.
 - **Post-submission cleanup:** After receiving `ResponseAck` (or `TokenAlreadySpent`), the client should delete the stored token material. It is single-use — the spent-token ledger prevents replay regardless.
 
-### 2.7 Scheme Selection (Open)
+### 2.7 Scheme Selection
 
-Several blind signature schemes exist. The choice has significant implications:
+**Decision: RSA Blind Signatures per [RFC 9474](https://www.rfc-editor.org/rfc/rfc9474).**
+
+Implemented via the [`blind-rsa-signatures`](https://docs.rs/blind-rsa-signatures) crate with 2048-bit keys.
 
 | Scheme | Pros | Cons | Notes |
 |--------|------|------|-------|
-| **RSA Blind Signatures (Chaum)** | Well-studied, simple, information-theoretic blindness | Large key sizes (2048+ bits), large signatures. Heavier computation. | RFC 9474 standardizes RSA blind signatures. Mature. |
-| **EC-based Blind Signatures** | Smaller keys and signatures. Faster on constrained devices. | Less mature standardization. Scheme-specific security proofs. | Good fit for IoT/wearable clients. |
-| **Partially Blind Signatures** | Signer sees some metadata (e.g., batch ID) while nonce remains hidden. Enables scoping without separate metadata. | More complex protocols. Fewer standard implementations. | Ideal for token scoping — the Token Issuer can verify batch_id without seeing the nonce. |
+| **RSA Blind Signatures (Chaum)** | Well-studied, simple, information-theoretic blindness | Large key sizes (2048+ bits), large signatures. Heavier computation. | **Selected.** RFC 9474 standardized. Mature ecosystem. |
+| **EC-based Blind Signatures** | Smaller keys and signatures. Faster on constrained devices. | Less mature standardization. Scheme-specific security proofs. | Future option for IoT/wearable clients if RSA proves too heavy. |
+| **Partially Blind Signatures** | Signer sees some metadata (e.g., batch ID) while nonce remains hidden. Enables scoping without separate metadata. | More complex protocols. Fewer standard implementations. | Future evolution path — would allow the Token Issuer to verify batch_id without seeing the nonce. |
 
-**Recommendation direction:** Partially blind signatures are the most natural fit for Pulse (scope metadata is visible to the signer, identity-bearing nonce is hidden). EC-based schemes are preferred for constrained device support. The specific scheme requires a dedicated cryptographic design review.
+**Rationale:** RSA blind signatures provide information-theoretic blindness (not merely computationally hard — mathematically impossible to correlate without the blinding factor). RFC 9474 standardization gives confidence in the protocol's security properties and interoperability. The larger key/signature sizes are acceptable for desktop and mobile clients; if constrained embedded devices require smaller payloads, an EC-based scheme can be evaluated as a future addition.
 
 ---
 
@@ -284,25 +286,28 @@ Even with cryptographic unlinkability, **timing** is a correlation vector: if an
 
 ## 7. Protocol Message Summary
 
+All protocol messages are serialized with [postcard](https://docs.rs/postcard) binary format and carry a version byte prefix. Authentication (`POST /auth`) uses JSON. Error responses use JSON with `{ "code": "...", "message": "..." }` shape.
+
 ### Phase 1 — Identity-Aware Channel (Client ↔ Identity)
 
-| Direction | Message | Payload |
+| Direction | Message Type | Key Fields |
 |-----------|---------|---------|
-| Client → Server | `AUTH_HELLO` | IdP assertion (SSO token) |
-| Server → Client | `AUTH_OK` | Session established |
-| Server → Client | `QUESTION_DELIVERY` | question_batch_id, question content, response type, expiry, metadata |
-| Client → Server | `TOKEN_REQUEST` | blinded_token, question_batch_id |
-| Server → Client | `TOKEN_RESPONSE` | signed_blinded_token, key_version |
-| Server → Client | `TOKEN_DENIED` | reason (frequency cap, not authorized, etc.) |
+| Client → Server | (JSON) `POST /auth` | Credential (e.g., API key). Returns session token, employee ID. |
+| Server → Client | `QuestionDelivery` | `question_batch_id`, `question_text`, `response_type`, `expiry`, `segment_vector` |
+| Client → Server | `TokenRequest` | `blinded_token`, `question_batch_id` |
+| Server → Client | `TokenResponse` | `blind_signature`, `key_version` |
+| Server → Client | `TokenDenied` | `reason`: `FrequencyCap`, `NotAuthorized`, or `BatchExpired` |
 
 ### Phase 2 — Anonymous Channel (Client → Relay → Signal)
 
-| Direction | Message | Payload |
+| Direction | Message Type | Key Fields |
 |-----------|---------|---------|
-| Client → Relay | `RESPONSE_SUBMIT` | unblinded_token, signature, key_version, question_batch_id, tenant_id, response_blob |
-| Relay → Collector | (same, stripped) | Same payload, source identity removed |
-| Collector → Relay → Client | `RESPONSE_ACK` | Accepted |
-| Collector → Relay → Client | `RESPONSE_REJECT` | reason (invalid_sig, expired, already_spent, malformed) |
+| Client → Relay | `ResponseSubmit` | `token` (unblinded), `signature`, `msg_randomizer`, `key_version`, `question_batch_id`, `tenant_id`, `response_blob` |
+| Relay → Collector | (opaque bytes) | Same payload, source identity stripped. Relay does not deserialize. |
+| Collector → Client | `ResponseAck` | Accepted (empty). |
+| Collector → Client | `ResponseReject` | `reason`: `InvalidSignature`, `TokenExpired`, `TokenAlreadySpent`, `BatchMismatch`, `TenantMismatch`, or `Malformed` |
+
+Message types are defined in `pulse-protocol`. See the [Crate Structure](crate-structure.md) for module layout.
 
 ---
 

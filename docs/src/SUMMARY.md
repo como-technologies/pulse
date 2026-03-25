@@ -17,6 +17,10 @@
 - [Key Management](key-management.md)
 - [Threat Model](threat-model.md)
 
+# Project
+
+- [Roadmap](roadmap.md)
+
 # Development
 
 - [Crate Structure](crate-structure.md)
