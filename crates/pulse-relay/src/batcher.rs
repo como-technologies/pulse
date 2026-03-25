@@ -87,44 +87,62 @@ async fn forward(client: &reqwest::Client, signal_url: &str, body: Bytes) -> For
     }
 }
 
+/// Flush a batch: shuffle, add timing delays, and forward each request.
+async fn flush_batch(batch: &mut Vec<PendingRequest>, config: &Config, client: &reqwest::Client) {
+    if batch.is_empty() {
+        return;
+    }
+
+    let mut rng = StdRng::from_os_rng();
+    batch.shuffle(&mut rng);
+    let delays: Vec<u64> = batch
+        .iter()
+        .map(|_| {
+            if config.max_delay_ms > config.min_delay_ms {
+                rng.random_range(config.min_delay_ms..=config.max_delay_ms)
+            } else {
+                0
+            }
+        })
+        .collect();
+
+    tracing::info!(batch_size = batch.len(), "flushing batch");
+
+    for (item, delay) in batch.drain(..).zip(delays) {
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+
+        let result = forward(client, &config.signal_url, item.body).await;
+        // If the client already disconnected, the send fails silently — that's fine
+        let _ = item.reply.send(result);
+    }
+}
+
 /// Background task that drains, shuffles, and forwards batched requests.
-pub async fn flush_loop(batcher: Arc<Batcher>, config: Arc<Config>, client: reqwest::Client) {
+///
+/// Runs until `shutdown` is signalled, then performs a final flush to deliver
+/// any in-flight requests before exiting.
+pub async fn flush_loop(
+    batcher: Arc<Batcher>,
+    config: Arc<Config>,
+    client: reqwest::Client,
+    mut shutdown: tokio::sync::watch::Receiver<()>,
+) {
     let notify = batcher.notifier();
     loop {
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_secs(config.batch_window_secs)) => {},
             _ = notify.notified() => {},
+            _ = shutdown.changed() => {
+                tracing::info!("shutdown signal received, performing final flush");
+                let mut batch = batcher.drain();
+                flush_batch(&mut batch, &config, &client).await;
+                return;
+            }
         }
 
         let mut batch = batcher.drain();
-        if batch.is_empty() {
-            continue;
-        }
-
-        // Shuffle for timing decorrelation and pre-compute delays.
-        let mut rng = StdRng::from_os_rng();
-        batch.shuffle(&mut rng);
-        let delays: Vec<u64> = batch
-            .iter()
-            .map(|_| {
-                if config.max_delay_ms > config.min_delay_ms {
-                    rng.random_range(config.min_delay_ms..=config.max_delay_ms)
-                } else {
-                    0
-                }
-            })
-            .collect();
-
-        tracing::info!(batch_size = batch.len(), "flushing batch");
-
-        for (item, delay) in batch.into_iter().zip(delays) {
-            if delay > 0 {
-                tokio::time::sleep(Duration::from_millis(delay)).await;
-            }
-
-            let result = forward(&client, &config.signal_url, item.body).await;
-            // If the client already disconnected, the send fails silently — that's fine
-            let _ = item.reply.send(result);
-        }
+        flush_batch(&mut batch, &config, &client).await;
     }
 }

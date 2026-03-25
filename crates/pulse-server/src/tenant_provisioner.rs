@@ -26,6 +26,7 @@ pub struct TenantProvisioner {
 }
 
 impl TenantProvisioner {
+    #[must_use]
     pub fn new(
         cmk: Arc<dyn CmkProvider>,
         dek_store: Arc<dyn DekStore>,

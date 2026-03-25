@@ -69,10 +69,22 @@ impl fmt::Display for TenantId {
 #[serde(transparent)]
 pub struct KeyVersion(pub u32);
 
+impl fmt::Display for KeyVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Unix epoch timestamp (seconds).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct UnixTimestamp(pub u64);
+
+impl fmt::Display for UnixTimestamp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl UnixTimestamp {
     pub fn now() -> Self {
@@ -85,13 +97,19 @@ impl UnixTimestamp {
 }
 
 /// 32-byte random nonce for token uniqueness.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Nonce(pub [u8; 32]);
 
 impl Nonce {
     pub fn random() -> Self {
         Self(rand::random())
+    }
+}
+
+impl AsRef<[u8]> for Nonce {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -117,6 +135,12 @@ impl fmt::Display for BlindedToken {
     }
 }
 
+impl AsRef<[u8]> for BlindedToken {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 /// Blind signature over a blinded token.
 ///
 /// Debug and Display are redacted — cryptographic material.
@@ -138,6 +162,12 @@ impl fmt::Display for BlindSig {
     }
 }
 
+impl AsRef<[u8]> for BlindSig {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 /// Serialized TokenPayload bytes.
 ///
 /// Debug and Display are redacted — contains the full token value.
@@ -156,6 +186,12 @@ impl fmt::Debug for TokenBytes {
 impl fmt::Display for TokenBytes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[REDACTED:TokenBytes]")
+    }
+}
+
+impl AsRef<[u8]> for TokenBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
@@ -182,6 +218,12 @@ impl fmt::Display for SignatureBytes {
     }
 }
 
+impl AsRef<[u8]> for SignatureBytes {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 /// Encrypted response blob (AES-256-GCM ciphertext).
 ///
 /// Debug and Display are redacted — contains encrypted response data.
@@ -203,11 +245,17 @@ impl fmt::Display for EncryptedBlob {
     }
 }
 
+impl AsRef<[u8]> for EncryptedBlob {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 /// Stable anonymous pseudonym for longitudinal sentiment tracking.
 ///
 /// Derived client-side as `HMAC-SHA256(employee_secret, tenant_id || epoch_id)`.
 /// Contains identity-linkable material — Debug and Display are redacted.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Pseudonym(pub [u8; 32]);
 
@@ -233,6 +281,18 @@ pub struct EpochId(pub String);
 impl fmt::Display for EpochId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(f)
+    }
+}
+
+impl From<&str> for EpochId {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+impl From<String> for EpochId {
+    fn from(s: String) -> Self {
+        Self(s)
     }
 }
 

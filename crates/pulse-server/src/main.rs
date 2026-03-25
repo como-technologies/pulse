@@ -68,6 +68,73 @@ fn trace_layer(
     )
 }
 
+fn create_cmk_provider(config: &Config) -> anyhow::Result<Arc<dyn CmkProvider>> {
+    match config.cmk_provider.as_str() {
+        "dev" => Ok(Arc::new(DevCmkProvider::new())),
+        other => anyhow::bail!("unsupported PULSE_CMK_PROVIDER: {other:?}; expected 'dev'"),
+    }
+}
+
+fn create_authenticator(config: &Config) -> anyhow::Result<Arc<dyn Authenticator>> {
+    match config.auth_provider.as_str() {
+        "dev" => {
+            tracing::info!("Using dev authenticator (accepts any non-empty credential)");
+            Ok(Arc::new(DevAuthenticator))
+        }
+        other => anyhow::bail!("unsupported PULSE_AUTH_PROVIDER: {other:?}; expected 'dev'"),
+    }
+}
+
+fn create_storage(
+    config: &Config,
+) -> anyhow::Result<(Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>)> {
+    match config.db_url.as_str() {
+        "memory" => {
+            tracing::info!("Using in-memory storage (no persistence)");
+            Ok((
+                Arc::new(InMemoryLedger::new()),
+                Arc::new(InMemoryStore::new()),
+            ))
+        }
+        url if url.starts_with("sqlite:") => {
+            let path = std::path::Path::new(&url["sqlite:".len()..]);
+            tracing::info!(path = %path.display(), "Using SQLite storage");
+            Ok((
+                Arc::new(SqliteLedger::open(path)?),
+                Arc::new(SqliteStore::open(path)?),
+            ))
+        }
+        other => anyhow::bail!(
+            "unsupported PULSE_DB_URL: {other:?}; expected 'memory' or 'sqlite:<path>'"
+        ),
+    }
+}
+
+fn create_sampling_engine(config: &Config) -> anyhow::Result<Arc<dyn SamplingEngine>> {
+    match config.sampling_provider.as_str() {
+        "dev" => {
+            let batch_id = pulse_protocol::QuestionBatchId::new();
+            let batch = QuestionBatch {
+                id: batch_id,
+                question_text: QuestionText::from("How are you feeling about work today?"),
+                response_type: ResponseType::Scale5,
+                expiry: UnixTimestamp(u64::MAX),
+            };
+            tracing::info!(
+                question_batch_id = %batch_id,
+                "Using dev sampling engine (accepts any employee)"
+            );
+            Ok(Arc::new(DevSamplingEngine::new(
+                batch,
+                config.max_tokens_per_batch,
+            )))
+        }
+        other => {
+            anyhow::bail!("unsupported PULSE_SAMPLING_PROVIDER: {other:?}; expected 'dev'")
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -98,13 +165,7 @@ async fn main() -> anyhow::Result<()> {
         uuid::Uuid::parse_str(&config.tenant_id).expect("PULSE_TENANT_ID must be a valid UUID"),
     );
 
-    // Select CMK provider
-    let cmk: Arc<dyn CmkProvider> = match config.cmk_provider.as_str() {
-        "dev" => Arc::new(DevCmkProvider::new()),
-        other => {
-            anyhow::bail!("unsupported PULSE_CMK_PROVIDER: {other:?}; expected 'dev'");
-        }
-    };
+    let cmk = create_cmk_provider(&config)?;
 
     // Create DEK store and tenant key store
     let dek_store = Arc::new(InMemoryDekStore::new());
@@ -116,42 +177,12 @@ async fn main() -> anyhow::Result<()> {
     provisioner.provision(default_tenant_id)?;
     tracing::info!(tenant_id = %default_tenant_id, "auto-provisioned default tenant");
 
-    // Select authentication provider
-    let authenticator: Arc<dyn Authenticator> = match config.auth_provider.as_str() {
-        "dev" => {
-            tracing::info!("Using dev authenticator (accepts any non-empty credential)");
-            Arc::new(DevAuthenticator)
-        }
-        other => {
-            anyhow::bail!("unsupported PULSE_AUTH_PROVIDER: {other:?}; expected 'dev'");
-        }
-    };
+    let authenticator = create_authenticator(&config)?;
 
     // Session store (in-memory — sessions don't need to survive restart)
     let session_store: Arc<dyn SessionStore> = Arc::new(InMemorySessionStore::new());
 
-    // Select storage backend based on db_url
-    let (ledger, base_store): (Arc<dyn SpentTokenLedger>, Arc<dyn ResponseStore>) =
-        match config.db_url.as_str() {
-            "memory" => {
-                tracing::info!("Using in-memory storage (no persistence)");
-                let ledger = Arc::new(InMemoryLedger::new());
-                let store = Arc::new(InMemoryStore::new());
-                (ledger, store)
-            }
-            url if url.starts_with("sqlite:") => {
-                let path = std::path::Path::new(&url["sqlite:".len()..]);
-                tracing::info!(path = %path.display(), "Using SQLite storage");
-                let ledger = Arc::new(SqliteLedger::open(path)?);
-                let store = Arc::new(SqliteStore::open(path)?);
-                (ledger, store)
-            }
-            other => {
-                anyhow::bail!(
-                    "unsupported PULSE_DB_URL: {other:?}; expected 'memory' or 'sqlite:<path>'"
-                );
-            }
-        };
+    let (ledger, base_store) = create_storage(&config)?;
 
     // Wrap the base store with envelope encryption
     let store: Arc<dyn ResponseStore> = Arc::new(EncryptingResponseStore::new(
@@ -160,26 +191,7 @@ async fn main() -> anyhow::Result<()> {
         cmk.clone(),
     ));
 
-    // Select sampling engine provider
-    let sampling_engine: Arc<dyn SamplingEngine> = match config.sampling_provider.as_str() {
-        "dev" => {
-            let batch_id = pulse_protocol::QuestionBatchId::new();
-            let batch = QuestionBatch {
-                id: batch_id,
-                question_text: QuestionText::from("How are you feeling about work today?"),
-                response_type: ResponseType::Scale5,
-                expiry: UnixTimestamp(u64::MAX),
-            };
-            tracing::info!(
-                question_batch_id = %batch_id,
-                "Using dev sampling engine (accepts any employee)"
-            );
-            Arc::new(DevSamplingEngine::new(batch, config.max_tokens_per_batch))
-        }
-        other => {
-            anyhow::bail!("unsupported PULSE_SAMPLING_PROVIDER: {other:?}; expected 'dev'");
-        }
-    };
+    let sampling_engine = create_sampling_engine(&config)?;
 
     // Identity zone state — authentication, sessions, token issuance, sampling
     let identity_state = Arc::new(IdentityState {

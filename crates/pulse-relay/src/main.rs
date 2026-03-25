@@ -46,8 +46,17 @@ async fn main() -> anyhow::Result<()> {
         client: client.clone(),
     });
 
-    // Spawn the background flush loop
-    tokio::spawn(batcher::flush_loop(batcher, config.clone(), client));
+    // Shutdown signal: watch channel lets both the flush loop and the server
+    // observe a single ctrl-c event.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(());
+
+    // Spawn the background flush loop with a shutdown receiver
+    let flush_handle = tokio::spawn(batcher::flush_loop(
+        batcher,
+        config.clone(),
+        client,
+        shutdown_rx,
+    ));
 
     // Trace layer — only method and path in span. No source IP, no request ID.
     let trace_layer = TraceLayer::new_for_http().make_span_with(
@@ -68,7 +77,20 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Relay listening on {}", config.listen_addr);
 
     let listener = TcpListener::bind(&config.listen_addr).await?;
-    axum::serve(listener, router).await?;
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("failed to listen for ctrl-c");
+            tracing::info!("ctrl-c received, initiating graceful shutdown");
+            // Signal the flush loop to perform its final flush
+            let _ = shutdown_tx.send(());
+        })
+        .await?;
+
+    // Wait for the flush loop to finish its final flush
+    let _ = flush_handle.await;
+    tracing::info!("relay shut down cleanly");
 
     Ok(())
 }

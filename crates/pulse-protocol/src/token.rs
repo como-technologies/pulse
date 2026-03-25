@@ -49,6 +49,7 @@ impl TokenPayload {
     }
 
     /// Deserialize a token from bytes.
+    #[must_use = "deserialized token must be used"]
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, postcard::Error> {
         postcard::from_bytes(bytes)
     }

@@ -36,6 +36,24 @@ impl SqliteStore {
     }
 }
 
+/// Map a SQLite row to a StoredResponse.
+fn map_stored_response(row: &rusqlite::Row) -> rusqlite::Result<StoredResponse> {
+    let blob: Vec<u8> = row.get(0)?;
+    let batch_id_str: String = row.get(1)?;
+    let tenant_id_str: String = row.get(2)?;
+    let received_at: u64 = row.get(3)?;
+    Ok(StoredResponse {
+        encrypted_blob: EncryptedBlob(blob),
+        question_batch_id: QuestionBatchId::from_uuid(
+            uuid::Uuid::parse_str(&batch_id_str).expect("invalid UUID in responses table"),
+        ),
+        tenant_id: TenantId::from_uuid(
+            uuid::Uuid::parse_str(&tenant_id_str).expect("invalid UUID in responses table"),
+        ),
+        received_at: UnixTimestamp(received_at),
+    })
+}
+
 impl ResponseStore for SqliteStore {
     fn list_by_batch(
         &self,
@@ -51,24 +69,7 @@ impl ResponseStore for SqliteStore {
             .expect("response store db error");
         stmt.query_map(
             rusqlite::params![question_batch_id.0.to_string(), tenant_id.0.to_string(),],
-            |row| {
-                let blob: Vec<u8> = row.get(0)?;
-                let batch_id_str: String = row.get(1)?;
-                let tenant_id_str: String = row.get(2)?;
-                let received_at: u64 = row.get(3)?;
-                Ok(StoredResponse {
-                    encrypted_blob: EncryptedBlob(blob),
-                    question_batch_id: QuestionBatchId::from_uuid(
-                        uuid::Uuid::parse_str(&batch_id_str)
-                            .expect("invalid UUID in responses table"),
-                    ),
-                    tenant_id: TenantId::from_uuid(
-                        uuid::Uuid::parse_str(&tenant_id_str)
-                            .expect("invalid UUID in responses table"),
-                    ),
-                    received_at: UnixTimestamp(received_at),
-                })
-            },
+            map_stored_response,
         )
         .expect("response store db error")
         .collect::<Result<Vec<_>, _>>()
@@ -104,24 +105,9 @@ impl ResponseStore for SqliteStore {
                 "SELECT encrypted_blob, question_batch_id, tenant_id, received_at FROM responses ORDER BY id",
             )
             .expect("response store db error");
-        stmt.query_map([], |row| {
-            let blob: Vec<u8> = row.get(0)?;
-            let batch_id_str: String = row.get(1)?;
-            let tenant_id_str: String = row.get(2)?;
-            let received_at: u64 = row.get(3)?;
-            Ok(StoredResponse {
-                encrypted_blob: EncryptedBlob(blob),
-                question_batch_id: QuestionBatchId::from_uuid(
-                    uuid::Uuid::parse_str(&batch_id_str).expect("invalid UUID in responses table"),
-                ),
-                tenant_id: TenantId::from_uuid(
-                    uuid::Uuid::parse_str(&tenant_id_str).expect("invalid UUID in responses table"),
-                ),
-                received_at: UnixTimestamp(received_at),
-            })
-        })
-        .expect("response store db error")
-        .collect::<Result<Vec<_>, _>>()
-        .expect("response store db error")
+        stmt.query_map([], map_stored_response)
+            .expect("response store db error")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("response store db error")
     }
 }

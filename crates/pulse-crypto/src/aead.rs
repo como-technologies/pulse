@@ -15,6 +15,7 @@ pub enum AeadError {
 
 /// Encrypt plaintext using AES-256-GCM with a random nonce.
 /// Returns nonce (12 bytes) prepended to ciphertext.
+#[must_use = "encrypted ciphertext must be stored or transmitted"]
 pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, AeadError> {
     let key = Key::<Aes256Gcm>::from_slice(key);
     let cipher = Aes256Gcm::new(key);
@@ -32,6 +33,7 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, AeadError> {
 
 /// Decrypt ciphertext produced by [`encrypt`].
 /// Expects nonce (12 bytes) prepended to ciphertext.
+#[must_use = "decrypted plaintext must be used"]
 pub fn decrypt(key: &[u8; 32], nonce_and_ciphertext: &[u8]) -> Result<Vec<u8>, AeadError> {
     if nonce_and_ciphertext.len() < 12 {
         return Err(AeadError::Decryption);
@@ -46,16 +48,19 @@ pub fn decrypt(key: &[u8; 32], nonce_and_ciphertext: &[u8]) -> Result<Vec<u8>, A
 }
 
 /// Generate a random 256-bit encryption key.
+#[must_use = "generated key must be stored"]
 pub fn generate_key() -> [u8; 32] {
     rand::random()
 }
 
 /// Wrap (encrypt) a 32-byte DEK under a wrapping key.
+#[must_use = "wrapped DEK must be stored"]
 pub fn wrap_key(wrapping_key: &[u8; 32], dek: &[u8; 32]) -> Result<Vec<u8>, AeadError> {
     encrypt(wrapping_key, dek)
 }
 
 /// Unwrap (decrypt) a wrapped DEK, enforcing the 32-byte size constraint.
+#[must_use = "unwrapped DEK must be used for encryption/decryption"]
 pub fn unwrap_key(wrapping_key: &[u8; 32], wrapped: &[u8]) -> Result<[u8; 32], AeadError> {
     let plaintext = decrypt(wrapping_key, wrapped)?;
     plaintext

@@ -20,29 +20,30 @@ pub struct Config {
 
 impl Config {
     /// Load configuration from environment variables, falling back to defaults.
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             listen_addr: env_or("PULSE_RELAY_ADDR", "127.0.0.1:8003"),
             signal_url: env_or("PULSE_RELAY_SIGNAL_URL", "http://127.0.0.1:8002"),
-            batch_size: env_or("PULSE_RELAY_BATCH_SIZE", "10")
-                .parse()
-                .expect("PULSE_RELAY_BATCH_SIZE must be a positive integer"),
-            batch_window_secs: env_or("PULSE_RELAY_BATCH_WINDOW_SECS", "5")
-                .parse()
-                .expect("PULSE_RELAY_BATCH_WINDOW_SECS must be a positive integer"),
-            min_delay_ms: env_or("PULSE_RELAY_MIN_DELAY_MS", "0")
-                .parse()
-                .expect("PULSE_RELAY_MIN_DELAY_MS must be a non-negative integer"),
-            max_delay_ms: env_or("PULSE_RELAY_MAX_DELAY_MS", "0")
-                .parse()
-                .expect("PULSE_RELAY_MAX_DELAY_MS must be a non-negative integer"),
-            request_timeout_secs: env_or("PULSE_RELAY_REQUEST_TIMEOUT_SECS", "30")
-                .parse()
-                .expect("PULSE_RELAY_REQUEST_TIMEOUT_SECS must be a positive integer"),
+            batch_size: parse_env("PULSE_RELAY_BATCH_SIZE", "10"),
+            batch_window_secs: parse_env("PULSE_RELAY_BATCH_WINDOW_SECS", "5"),
+            min_delay_ms: parse_env("PULSE_RELAY_MIN_DELAY_MS", "0"),
+            max_delay_ms: parse_env("PULSE_RELAY_MAX_DELAY_MS", "0"),
+            request_timeout_secs: parse_env("PULSE_RELAY_REQUEST_TIMEOUT_SECS", "30"),
         }
     }
 }
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn parse_env<T: std::str::FromStr>(key: &str, default: &str) -> T
+where
+    T::Err: std::fmt::Display,
+{
+    let value = env_or(key, default);
+    value
+        .parse()
+        .unwrap_or_else(|e| panic!("{key}={value:?}: {e}"))
 }

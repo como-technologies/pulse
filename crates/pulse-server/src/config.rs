@@ -48,6 +48,7 @@ pub struct Config {
 
 impl Config {
     /// Load configuration from environment variables, falling back to defaults.
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             identity_addr: env_or("PULSE_IDENTITY_ADDR", "127.0.0.1:8001"),

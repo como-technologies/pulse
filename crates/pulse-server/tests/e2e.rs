@@ -2,17 +2,9 @@
 //! across both Identity and Signal zones using the real route handlers,
 //! including analytics aggregation of response payloads.
 
-use std::sync::Arc;
-
-use axum::{
-    Router,
-    routing::{get, post},
-};
-use serde_json::Value;
-use tokio::net::TcpListener;
+mod common;
 
 use pulse_crypto::{aead, blind_sig};
-use pulse_identity::{InMemorySessionStore, QuestionBatch, SamplingEngine, TokenIssuer};
 use pulse_protocol::epoch::EpochConfig;
 use pulse_protocol::messages::{
     QuestionDelivery, ResponseData, ResponsePayload, ResponseSubmit, ResponseType, TokenRequest,
@@ -20,109 +12,15 @@ use pulse_protocol::messages::{
 };
 use pulse_protocol::token::{AttestationClass, TokenPayload};
 use pulse_protocol::{
-    BlindedToken, EncryptedBlob, KeyVersion, Nonce, Pseudonym, QuestionBatchId, QuestionText,
-    SegmentLabel, SignatureBytes, TenantId, UnixTimestamp,
+    BlindedToken, EncryptedBlob, KeyVersion, Nonce, Pseudonym, SegmentLabel, SignatureBytes,
+    UnixTimestamp,
 };
-use pulse_signal::{InMemoryLedger, InMemoryStore, ResponseCollector};
-
-use pulse_server::analytics::AnalyticsEngine;
-use pulse_server::cmk::CmkProvider;
-use pulse_server::dek_store::{DekDomain, DekStore, InMemoryDekStore};
-use pulse_server::dev_auth::DevAuthenticator;
-use pulse_server::dev_cmk::DevCmkProvider;
-use pulse_server::dev_sampling::DevSamplingEngine;
-use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
-use pulse_server::{IdentityState, SignalState, analytics_routes, identity_routes, signal_routes};
-
-struct TestServers {
-    identity_url: String,
-    signal_url: String,
-    batch_id: QuestionBatchId,
-    tenant_id: TenantId,
-    pk: pulse_crypto::BrssPublicKey,
-    analytics_dek: [u8; 32],
-}
-
-async fn start_test_servers() -> TestServers {
-    let kp = blind_sig::generate_keypair().unwrap();
-    let pk = kp.pk.clone();
-    let tenant_id = TenantId::new();
-    let key_store = Arc::new(InMemoryTenantKeyStore::new());
-    key_store.register_tenant(tenant_id, kp.sk, kp.pk, KeyVersion(1));
-
-    let ledger = Arc::new(InMemoryLedger::new());
-    let store: Arc<dyn pulse_signal::ResponseStore> = Arc::new(InMemoryStore::new());
-
-    let batch_id = QuestionBatchId::new();
-    let batch = QuestionBatch {
-        id: batch_id,
-        question_text: QuestionText::from("How are you feeling about work today?"),
-        response_type: ResponseType::Scale5,
-        expiry: UnixTimestamp(u64::MAX),
-    };
-    let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(DevSamplingEngine::new(batch, 1));
-
-    // Provision analytics DEK for the tenant
-    let cmk = Arc::new(DevCmkProvider::new());
-    let dek_store = Arc::new(InMemoryDekStore::new());
-    let analytics_dek = aead::generate_key();
-    let wrapped = cmk.wrap_dek(&tenant_id, &analytics_dek).unwrap();
-    dek_store.store_wrapped_dek(&tenant_id, DekDomain::Analytics, wrapped);
-
-    let analytics = AnalyticsEngine::new(store.clone(), dek_store, cmk, 1);
-
-    let identity_state = Arc::new(IdentityState {
-        issuer: TokenIssuer::with_sampling(key_store.clone(), sampling_engine.clone()),
-        authenticator: Arc::new(DevAuthenticator),
-        session_store: Arc::new(InMemorySessionStore::new()),
-        sampling_engine,
-        tenant_id,
-    });
-
-    let signal_state = Arc::new(SignalState {
-        collector: ResponseCollector::new(key_store, ledger, store.clone()),
-        store,
-        analytics: Some(analytics),
-    });
-
-    let identity_router = Router::new()
-        .route("/auth", post(identity_routes::auth))
-        .route("/question", get(identity_routes::get_questions))
-        .route("/token/sign", post(identity_routes::sign_token))
-        .with_state(identity_state);
-
-    let signal_router = Router::new()
-        .route("/response", post(signal_routes::submit_response))
-        .route("/debug/responses", get(signal_routes::debug_responses))
-        .route(
-            "/analytics/batch/{batch_id}",
-            get(analytics_routes::aggregate_batch),
-        )
-        .with_state(signal_state);
-
-    // Bind to port 0 for random available ports
-    let identity_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let signal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-
-    let identity_addr = identity_listener.local_addr().unwrap();
-    let signal_addr = signal_listener.local_addr().unwrap();
-
-    tokio::spawn(axum::serve(identity_listener, identity_router).into_future());
-    tokio::spawn(axum::serve(signal_listener, signal_router).into_future());
-
-    TestServers {
-        identity_url: format!("http://{identity_addr}"),
-        signal_url: format!("http://{signal_addr}"),
-        batch_id,
-        tenant_id,
-        pk,
-        analytics_dek,
-    }
-}
+use serde_json::Value;
 
 #[tokio::test]
 async fn full_http_flow() {
-    let servers = start_test_servers().await;
+    let servers = common::start_test_servers(true).await;
+    let analytics_dek = servers.analytics_dek.unwrap();
     let client = reqwest::Client::new();
 
     // 1. Authenticate to get a session token
@@ -210,7 +108,7 @@ async fn full_http_flow() {
         segment_vector: vec![SegmentLabel::from("engineering")],
     };
     let payload_bytes = postcard::to_allocvec(&payload).unwrap();
-    let encrypted_response = aead::encrypt(&servers.analytics_dek, &payload_bytes).unwrap();
+    let encrypted_response = aead::encrypt(&analytics_dek, &payload_bytes).unwrap();
 
     // 7. Submit to Signal zone (different URL, NO auth) — binary request
     let submit = ResponseSubmit {
@@ -276,7 +174,7 @@ async fn full_http_flow() {
 
 #[tokio::test]
 async fn questions_include_segment_vector() {
-    let servers = start_test_servers().await;
+    let servers = common::start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // Authenticate
@@ -314,7 +212,7 @@ async fn questions_include_segment_vector() {
 
 #[tokio::test]
 async fn sign_denied_frequency_cap() {
-    let servers = start_test_servers().await;
+    let servers = common::start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // Authenticate

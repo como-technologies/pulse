@@ -27,18 +27,21 @@ pub enum BlindSigError {
 }
 
 /// Generate an RSA key pair for blind signature operations.
+#[must_use = "key pair must be stored for signing/verification"]
 pub fn generate_keypair() -> Result<BrssKeyPair, BlindSigError> {
     BrssKeyPair::generate(&mut DefaultRng, KEY_BITS).map_err(BlindSigError::KeyGeneration)
 }
 
 /// Client: blind a message for signing by the Token Issuer.
 /// Returns the blinding result containing the blinded message and the secret blinding factor.
+#[must_use = "blinding result is needed for finalization"]
 pub fn blind(pk: &BrssPublicKey, msg: &[u8]) -> Result<BlindingResult, BlindSigError> {
     pk.blind(&mut DefaultRng, msg)
         .map_err(BlindSigError::Blinding)
 }
 
 /// Token Issuer: sign a blinded message without seeing the original content.
+#[must_use = "blind signature must be sent to the client"]
 pub fn blind_sign(
     sk: &BrssSecretKey,
     blinded_msg: &blind_rsa_signatures::BlindMessage,
@@ -49,6 +52,7 @@ pub fn blind_sign(
 
 /// Client: unblind the signature and verify it against the public key.
 /// Returns the final signature that can be verified by the Response Collector.
+#[must_use = "finalized signature is needed for response submission"]
 pub fn finalize(
     pk: &BrssPublicKey,
     blind_sig: &BlindSignature,
@@ -60,6 +64,7 @@ pub fn finalize(
 }
 
 /// Response Collector: verify a signature against the public key.
+#[must_use = "verification result must be checked"]
 pub fn verify(
     pk: &BrssPublicKey,
     sig: &Signature,

@@ -62,8 +62,25 @@ async fn start_mock_signal(status: StatusCode, body: &str) -> (String, Arc<MockS
     (format!("http://{addr}"), state)
 }
 
+/// Handle to a running relay — keeps the flush loop alive via the shutdown sender.
+struct RunningRelay {
+    url: String,
+    /// Kept alive to prevent the flush loop from exiting.
+    /// Drop this to trigger graceful shutdown.
+    _shutdown_tx: tokio::sync::watch::Sender<()>,
+}
+
 /// Start a relay pointed at the given signal URL.
-async fn start_relay(signal_url: &str, batch_size: usize) -> String {
+async fn start_relay(signal_url: &str, batch_size: usize) -> RunningRelay {
+    start_relay_with_timeout(signal_url, batch_size, 5).await
+}
+
+/// Start a relay with a custom request timeout.
+async fn start_relay_with_timeout(
+    signal_url: &str,
+    batch_size: usize,
+    request_timeout_secs: u64,
+) -> RunningRelay {
     let config = Arc::new(Config {
         listen_addr: "127.0.0.1:0".to_string(),
         signal_url: signal_url.to_string(),
@@ -71,7 +88,7 @@ async fn start_relay(signal_url: &str, batch_size: usize) -> String {
         batch_window_secs: 1,
         min_delay_ms: 0,
         max_delay_ms: 0,
-        request_timeout_secs: 5,
+        request_timeout_secs,
     });
 
     let client = reqwest::Client::builder()
@@ -87,7 +104,8 @@ async fn start_relay(signal_url: &str, batch_size: usize) -> String {
         client: client.clone(),
     });
 
-    tokio::spawn(batcher::flush_loop(batcher, config, client));
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(());
+    tokio::spawn(batcher::flush_loop(batcher, config, client, shutdown_rx));
 
     let router = Router::new()
         .route("/response", post(routes::relay_response))
@@ -97,17 +115,20 @@ async fn start_relay(signal_url: &str, batch_size: usize) -> String {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(axum::serve(listener, router).into_future());
 
-    format!("http://{addr}")
+    RunningRelay {
+        url: format!("http://{addr}"),
+        _shutdown_tx: shutdown_tx,
+    }
 }
 
 #[tokio::test]
 async fn basic_forwarding() {
     let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
-    let relay_url = start_relay(&signal_url, 1).await;
+    let relay = start_relay(&signal_url, 1).await;
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{relay_url}/response"))
+        .post(format!("{}/response", relay.url))
         .body(b"hello world".to_vec())
         .send()
         .await
@@ -123,11 +144,11 @@ async fn basic_forwarding() {
 #[tokio::test]
 async fn no_client_headers_forwarded() {
     let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
-    let relay_url = start_relay(&signal_url, 1).await;
+    let relay = start_relay(&signal_url, 1).await;
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{relay_url}/response"))
+        .post(format!("{}/response", relay.url))
         .header("User-Agent", "EvilBrowser/1.0")
         .header("X-Forwarded-For", "192.168.1.100")
         .header("Authorization", "Bearer secret-token")
@@ -171,18 +192,18 @@ async fn no_client_headers_forwarded() {
 async fn batching_delivers_all_requests() {
     let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
     // batch_size=2 so two requests trigger a flush
-    let relay_url = start_relay(&signal_url, 2).await;
+    let relay = start_relay(&signal_url, 2).await;
 
     let client = reqwest::Client::new();
 
     // Send two requests concurrently — they should batch together
     let (r1, r2) = tokio::join!(
         client
-            .post(format!("{relay_url}/response"))
+            .post(format!("{}/response", relay.url))
             .body(b"request-1".to_vec())
             .send(),
         client
-            .post(format!("{relay_url}/response"))
+            .post(format!("{}/response", relay.url))
             .body(b"request-2".to_vec())
             .send(),
     );
@@ -206,11 +227,11 @@ async fn upstream_error_forwarded() {
         r#"{"code":"RESPONSE_INVALID_SIGNATURE","message":"bad sig"}"#,
     )
     .await;
-    let relay_url = start_relay(&signal_url, 1).await;
+    let relay = start_relay(&signal_url, 1).await;
 
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{relay_url}/response"))
+        .post(format!("{}/response", relay.url))
         .body(b"bad-request".to_vec())
         .send()
         .await
@@ -224,13 +245,13 @@ async fn upstream_error_forwarded() {
 #[tokio::test]
 async fn body_opacity() {
     let (signal_url, mock) = start_mock_signal(StatusCode::OK, "").await;
-    let relay_url = start_relay(&signal_url, 1).await;
+    let relay = start_relay(&signal_url, 1).await;
 
     // Send non-JSON binary bytes — relay should forward unchanged
     let binary_payload: Vec<u8> = vec![0x00, 0xFF, 0xDE, 0xAD, 0xBE, 0xEF];
     let client = reqwest::Client::new();
     let resp = client
-        .post(format!("{relay_url}/response"))
+        .post(format!("{}/response", relay.url))
         .body(binary_payload.clone())
         .send()
         .await
@@ -243,5 +264,48 @@ async fn body_opacity() {
     assert_eq!(
         requests[0].body, binary_payload,
         "binary bytes must pass through unchanged"
+    );
+}
+
+/// Start a mock Signal zone that delays before responding (to test timeouts).
+async fn start_slow_mock_signal(delay: Duration) -> String {
+    async fn slow_handler(State(delay): State<Duration>, _body: Bytes) -> impl IntoResponse {
+        tokio::time::sleep(delay).await;
+        StatusCode::OK
+    }
+
+    let router = Router::new()
+        .route("/response", post(slow_handler))
+        .with_state(delay);
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(axum::serve(listener, router).into_future());
+    format!("http://{addr}")
+}
+
+#[tokio::test]
+async fn request_timeout_returns_504() {
+    // Mock server that takes 5 seconds to respond
+    let signal_url = start_slow_mock_signal(Duration::from_secs(5)).await;
+    // Relay with a 1-second timeout
+    let relay = start_relay_with_timeout(&signal_url, 1, 1).await;
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10)) // Client timeout longer than relay timeout
+        .build()
+        .unwrap();
+
+    let resp = client
+        .post(format!("{}/response", relay.url))
+        .body(b"will-timeout".to_vec())
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(
+        resp.status(),
+        504,
+        "relay should return 504 Gateway Timeout"
     );
 }

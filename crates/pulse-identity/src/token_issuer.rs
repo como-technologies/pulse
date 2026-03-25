@@ -101,6 +101,7 @@ impl TokenIssuer {
         skip(self),
         fields(tenant_id = %tenant_id, question_batch_id = %request.question_batch_id)
     )]
+    #[must_use = "token response must be sent to the client"]
     pub fn sign_token(
         &self,
         tenant_id: &TenantId,

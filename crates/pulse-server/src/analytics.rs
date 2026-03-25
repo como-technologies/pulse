@@ -51,6 +51,7 @@ pub struct AnalyticsEngine {
 }
 
 impl AnalyticsEngine {
+    #[must_use]
     pub fn new(
         store: Arc<dyn ResponseStore>,
         dek_store: Arc<dyn DekStore>,

@@ -53,6 +53,7 @@ impl ResponseCollector {
             key_version = submit.key_version.0,
         )
     )]
+    #[must_use = "acceptance result must be checked"]
     pub fn accept(&self, submit: &ResponseSubmit) -> Result<(), CollectorError> {
         // 1. Deserialize the token payload
         tracing::debug!("deserializing token payload");
