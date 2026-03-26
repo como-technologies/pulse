@@ -2,6 +2,8 @@
 
 [Introduction](introduction.md)
 
+- [Roadmap](roadmap.md)
+
 - [Concepts](concepts/README.md)
   - [Verified Anonymity](concepts/verified-anonymity.md)
   - [Sampling & Statistics](concepts/sampling.md)
@@ -13,9 +15,8 @@
   - [Key Management](design/key-management.md)
   - [Threat Model](design/threat-model.md)
 
-- [Roadmap](roadmap.md)
-
 - [Development](development/README.md)
+  - [Client Architecture](development/client-architecture.md)
   - [Authentication Providers](development/authentication.md)
   - [Storage Providers](development/storage-providers.md)
   - [Sampling Engine Providers](development/sampling-providers.md)

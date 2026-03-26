@@ -2,7 +2,7 @@
 
 *Living document. Technology-agnostic. Describes the high-level architecture of the Pulse platform.*
 
-*Companion documents: [Anonymity Protocol](anonymity-protocol.md) | [Device Attestation](device-attestation.md) | [Threat Model](threat-model.md) | [Key Management](key-management.md)*
+*Companion documents: [Anonymity Protocol](anonymity-protocol.md) | [Device Attestation](device-attestation.md) | [Key Management](key-management.md) | [Threat Model](threat-model.md)*
 
 ---
 
@@ -357,8 +357,8 @@ These properties must hold regardless of implementation choices:
 | Wire format | Postcard binary with version byte prefix | Compact, `no_std`-friendly, serde-native. Version prefix enables protocol evolution. JSON retained for auth, debug, analytics, errors. |
 | Relay architecture | Single relay with batching and shuffling | Relay network remains a future option. Current design is sufficient for production launch. |
 | Client lifecycle management | Control plane in Identity zone | Authenticated management channel for version negotiation and update signaling. Extensible for config delivery, fleet health. |
-| Target client platforms | Native desktop (system tray) + mobile first | UEM-managed desktops, app-store mobile. Embedded/IoT planned for later. Web unlikely (no one browses to a polling app). |
-| Project phasing | Three-tier milestones (day-0 / day-1 / day-2) | Day-0 = working system for demos (complete). Day-1 = production readiness. Day-2 = operational maturity. See [Roadmap](../roadmap.md). |
+| Client architecture | Core library + platform shells | Platform-agnostic `pulse-client` crate with thin shells (WASM, desktop, mobile, embedded). Shell priority adapts to market signals. See [Client Architecture](../development/client-architecture.md). |
+| Project phasing | Four outcome-oriented milestones (M0–M3) | M0 = protocol proof. M1 = first pilot. M2 = general availability. M3 = full suite. See [Roadmap](../roadmap.md). |
 
 ---
 

@@ -1,6 +1,6 @@
 # Crate Structure
 
-Pulse is a Cargo workspace with six crates, layered by responsibility.
+Pulse is a Cargo workspace with crates layered by responsibility.
 
 ```
 crates/
@@ -8,6 +8,7 @@ crates/
   pulse-protocol/    Wire types and message definitions
   pulse-identity/    Identity zone domain logic
   pulse-signal/      Signal zone domain logic
+  pulse-client/      Client-side protocol (planned — see Client Architecture)
   pulse-server/      HTTP layer (Axum) — composition root
   pulse-relay/       Anonymizing relay (standalone binary)
 ```
@@ -39,6 +40,12 @@ Signal zone domain logic. `ResponseCollector`: signature verification, spent-tok
 
 Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `Arc<dyn ResponseStore>`), not concrete storage -- swap the adapter without touching domain code.
 
+## pulse-client
+
+Client-side protocol state machine. Platform-agnostic — no I/O, no UI. Handles token blinding/unblinding, pseudonym derivation, response encryption, and submission timing. Depends on `pulse-crypto` and `pulse-protocol` only. See [Client Architecture](client-architecture.md) for the full design.
+
+**Status:** Planned for M0. Not yet implemented.
+
 ## Trust zone isolation
 
 `pulse-identity` and `pulse-signal` are separate crates with no dependency on each other. The Cargo dependency graph makes cross-zone imports a compile error -- the [trust zone boundary](../design/README.md) is enforced by the compiler, not by convention.
@@ -69,4 +76,21 @@ pulse-server                 pulse-relay (standalone, no domain deps)
   -> pulse-signal
        -> pulse-protocol
        -> pulse-crypto
+
+pulse-client (planned)
+  -> pulse-protocol
+  -> pulse-crypto
 ```
+
+## Technology Stack
+
+| Layer                | Choice            | Notes                                                                  |
+| -------------------- | ----------------- | ---------------------------------------------------------------------- |
+| Language             | Rust              | End-to-end: server, client, WASM, mobile (UniFFI), embedded (`no_std`) |
+| HTTP framework       | Axum + Tokio      | Server composition root                                                |
+| Blind signatures     | RSA per RFC 9474  | EC-based schemes as future option for constrained devices              |
+| Wire format          | Postcard (binary) | Compact, serde-native, `no_std`-compatible across all targets          |
+| Pseudonym derivation | HMAC-SHA256       | Client-side, epoch-rotated                                             |
+| Encryption           | AES-256-GCM       | Two-tier envelope: tenant CMK + Pulse-generated DEKs                   |
+| Storage              | SQLite (current)  | Behind traits; production backends via adapter pattern                 |
+| Property testing     | Proptest          | Cryptographic operations verified for arbitrary inputs                 |
