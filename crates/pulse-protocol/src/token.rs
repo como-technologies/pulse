@@ -4,18 +4,33 @@ use crate::{
     KeyVersion, Nonce, QuestionBatchId, SegmentLabel, TenantId, TokenBytes, UnixTimestamp,
 };
 
-/// Device attestation class — determines the identity confidence of the device.
+/// Device attestation class — determines the identity confidence of a device.
+///
+/// Embedded in [`TokenPayload`] at issuance time so the Analytics Engine can
+/// weight responses by confidence level.
+// ANCHOR: attestation_class
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AttestationClass {
-    /// Personal authenticated device (phone, laptop) — high confidence
+    /// Personal authenticated device (phone, laptop). **High** identity
+    /// confidence — tied to a specific, authenticated employee via SSO.
+    /// Supports pseudonym derivation and full statistical weight.
     Personal,
-    /// Shared device scoped to a group (team tablet) — medium confidence
+    /// Shared device scoped to an organizational group (team tablet).
+    /// **Medium** confidence — tied to a known group, not an individual.
+    /// No pseudonym support; contributes to group-level sentiment only.
     Group,
-    /// Shared device scoped to a location (breakroom button) — low confidence
+    /// Shared device scoped to a physical location (breakroom button,
+    /// cafeteria kiosk). **Low** confidence — tied to a location, not a
+    /// group or individual. Contextual signal only; excluded from
+    /// significance calculations.
     Location,
-    /// Hybrid: shared display + phone handoff — high confidence
+    /// Hybrid display + phone handoff. **High** confidence — the employee
+    /// authenticates via their personal device (triggered by a shared
+    /// display's QR code or NFC tap), so the full blind signature flow
+    /// applies.
     Hybrid,
 }
+// ANCHOR_END: attestation_class
 
 // ANCHOR: token_payload
 /// Token payload that gets blind-signed by the Token Issuer.

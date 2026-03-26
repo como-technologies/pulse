@@ -113,12 +113,18 @@ Each location node can have devices. The Analytics Engine aggregates location si
 
 ## 3. Attestation Profile
 
-Every device in the system has an attestation profile, established during provisioning:
+Every device in the system has an attestation profile, established during provisioning. The `AttestationClass` enum is the only part of the profile currently implemented — it is embedded in `TokenPayload` at issuance time. The full profile struct (device registration, capabilities, credential types, confidence-weighted analytics) is tracked in [#16](https://github.com/como-technologies/pulse/issues/16), which depends on the control plane architecture ([#11](https://github.com/como-technologies/pulse/issues/11)).
+
+```rust
+{{#include ../../crates/pulse-protocol/src/token.rs:attestation_class}}
+```
+
+The remaining fields below are the intended shape of the full attestation profile:
 
 | Field | Description |
 |-------|-------------|
 | `device_id` | Unique identifier for the device |
-| `device_class` | `personal` \| `group` \| `location` \| `hybrid_display` |
+| `device_class` | `personal` \| `group` \| `location` \| `hybrid` |
 | `confidence_level` | `high` \| `medium` \| `low` |
 | `segment_binding` | What org segment this device is bound to (employee ID, group ID, or location node ID) |
 | `capabilities` | Supported response types, push/pull, max payload size, store-and-forward, etc. |
