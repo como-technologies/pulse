@@ -41,4 +41,4 @@ Each tenant has:
 - **Separate blind signature key pairs** -- tokens from Tenant A are invalid for Tenant B
 - **Separate k-anonymity thresholds** -- configurable per tenant based on their privacy posture
 
-For the full key hierarchy, envelope encryption architecture, and key lifecycle details, see [Key Management](key-management.md).
+For the full key hierarchy, envelope encryption architecture, and key lifecycle details, see [Key Management](../design/key-management.md).

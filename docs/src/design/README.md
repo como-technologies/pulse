@@ -358,7 +358,7 @@ These properties must hold regardless of implementation choices:
 | Relay architecture | Single relay with batching and shuffling | Relay network remains a future option. Current design is sufficient for production launch. |
 | Client lifecycle management | Control plane in Identity zone | Authenticated management channel for version negotiation and update signaling. Extensible for config delivery, fleet health. |
 | Target client platforms | Native desktop (system tray) + mobile first | UEM-managed desktops, app-store mobile. Embedded/IoT planned for later. Web unlikely (no one browses to a polling app). |
-| Project phasing | Three-tier milestones (day-0 / day-1 / day-2) | Day-0 = working system for demos (complete). Day-1 = production readiness. Day-2 = operational maturity. See [Roadmap](roadmap.md). |
+| Project phasing | Three-tier milestones (day-0 / day-1 / day-2) | Day-0 = working system for demos (complete). Day-1 = production readiness. Day-2 = operational maturity. See [Roadmap](../roadmap.md). |
 
 ---
 

@@ -55,5 +55,5 @@ Anonymity in Pulse is not a feature layered on top -- it is an architectural inv
 - K-anonymity thresholds are enforced **at the data level** (issuance-time segment coarsening), not at the UI level
 - Pseudonyms for longitudinal tracking are derived **client-side** and included inside encrypted response blobs -- invisible to both zones
 
-For the full cryptographic protocol specification, see [Anonymity Protocol](anonymity-protocol.md).
-For the threat analysis, see [Threat Model](threat-model.md).
+For the full cryptographic protocol specification, see [Anonymity Protocol](../design/anonymity-protocol.md).
+For the threat analysis, see [Threat Model](../design/threat-model.md).

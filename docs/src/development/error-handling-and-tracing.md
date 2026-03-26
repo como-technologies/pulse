@@ -9,7 +9,7 @@ Pulse is a privacy-critical system. The Identity zone knows WHO submitted a resp
 The `Sensitive` marker trait (defined in `pulse-protocol/src/newtypes.rs`) enforces this at the type level:
 
 ```rust
-{{#include ../../crates/pulse-protocol/src/newtypes.rs:sensitive_trait}}
+{{#include ../../../crates/pulse-protocol/src/newtypes.rs:sensitive_trait}}
 ```
 
 Any type implementing `Sensitive` must override `Debug` and `Display` to output `[REDACTED]`. This means Rust's standard formatting — and by extension, the `tracing` crate — can never accidentally print the inner value.

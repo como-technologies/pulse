@@ -41,7 +41,7 @@ Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `
 
 ## Trust zone isolation
 
-`pulse-identity` and `pulse-signal` are separate crates with no dependency on each other. The Cargo dependency graph makes cross-zone imports a compile error -- the [trust zone boundary](architecture.md) is enforced by the compiler, not by convention.
+`pulse-identity` and `pulse-signal` are separate crates with no dependency on each other. The Cargo dependency graph makes cross-zone imports a compile error -- the [trust zone boundary](../design/README.md) is enforced by the compiler, not by convention.
 
 ## pulse-server
 

@@ -2,7 +2,7 @@
 
 *Systematic analysis of attack surfaces, threats, and mitigations across all trust boundaries.*
 
-*Parent document: [Architecture](architecture.md)*
+*Parent document: [Architecture](README.md)*
 
 ---
 

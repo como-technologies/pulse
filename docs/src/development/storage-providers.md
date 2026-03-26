@@ -40,17 +40,17 @@ The URI scheme is the extension point. Adding a new provider means adding a new 
 ### SpentTokenLedger
 
 ```rust
-{{#include ../../crates/pulse-signal/src/ledger.rs:spent_token_ledger}}
+{{#include ../../../crates/pulse-signal/src/ledger.rs:spent_token_ledger}}
 
-{{#include ../../crates/pulse-signal/src/ledger.rs:spend_result}}
+{{#include ../../../crates/pulse-signal/src/ledger.rs:spend_result}}
 ```
 
 ### ResponseStore
 
 ```rust
-{{#include ../../crates/pulse-signal/src/store.rs:response_store}}
+{{#include ../../../crates/pulse-signal/src/store.rs:response_store}}
 
-{{#include ../../crates/pulse-signal/src/store.rs:stored_response}}
+{{#include ../../../crates/pulse-signal/src/store.rs:stored_response}}
 ```
 
 ---

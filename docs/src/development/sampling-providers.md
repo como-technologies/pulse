@@ -52,7 +52,7 @@ Client                           Identity Zone
 ## The SamplingEngine Trait
 
 ```rust
-{{#include ../../crates/pulse-identity/src/sampling.rs:sampling_engine_trait}}
+{{#include ../../../crates/pulse-identity/src/sampling.rs:sampling_engine_trait}}
 ```
 
 ---

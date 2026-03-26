@@ -40,7 +40,7 @@ At the protocol level, responses are opaque byte streams -- the protocol is resp
 
 ### Organizational Structure and K-Anonymity
 
-Organizations can optionally model their structure (company > division > department > team) and tag employees with arbitrary metadata (location, role level, tenure band). The system enforces minimum group size thresholds ([k-anonymity](architecture.md#10-k-anonymity)) when displaying segmented results to prevent responses from small groups from being reverse-engineered to identify individuals.
+Organizations can optionally model their structure (company > division > department > team) and tag employees with arbitrary metadata (location, role level, tenure band). The system enforces minimum group size thresholds ([k-anonymity](../design/README.md#10-k-anonymity)) when displaying segmented results to prevent responses from small groups from being reverse-engineered to identify individuals.
 
 ### Campaigns and Continuous Monitoring
 
@@ -48,7 +48,7 @@ Always-on baseline sentiment tracking rotates through the question library and w
 
 ### Insights and Analytics
 
-The system actively surfaces what matters -- aggregate dashboards, trend detection, anomaly detection, and recommendations. Results are viewable at any level of the org hierarchy where [k-anonymity](architecture.md#10-k-anonymity) thresholds are met.
+The system actively surfaces what matters -- aggregate dashboards, trend detection, anomaly detection, and recommendations. Results are viewable at any level of the org hierarchy where [k-anonymity](../design/README.md#10-k-anonymity) thresholds are met.
 
 ### Multi-Tenancy with Cryptographic Isolation
 
@@ -58,7 +58,7 @@ See [Multi-Tenancy](multi-tenancy.md) for details.
 
 ### Multi-Platform Client Support
 
-Clients span desktop, mobile, wearables, and embedded/IoT devices (e.g., a breakroom sentiment button). Both always-connected and store-and-forward modes are supported using the same protocol. See [Device Attestation](device-attestation.md) for how different device classes participate.
+Clients span desktop, mobile, wearables, and embedded/IoT devices (e.g., a breakroom sentiment button). Both always-connected and store-and-forward modes are supported using the same protocol. See [Device Attestation](../design/device-attestation.md) for how different device classes participate.
 
 ### Access Control
 
@@ -72,11 +72,11 @@ Integrates with external identity providers (SSO/federation) for authentication.
 
 ## Design Principles
 
-1. **Privacy is non-negotiable** -- Anonymity guarantees are [cryptographic](anonymity-protocol.md), not procedural. There is no admin backdoor to unmask respondents.
+1. **Privacy is non-negotiable** -- Anonymity guarantees are [cryptographic](../design/anonymity-protocol.md), not procedural. There is no admin backdoor to unmask respondents.
 2. **Statistical rigor over volume** -- A smaller, well-sampled dataset with known confidence is better than a flood of opt-in responses with unknown bias.
 3. **Protocol simplicity** -- Lightweight, efficient messaging. The protocol transports opaque payloads; interpretation lives at the edges.
-4. **Device diversity** -- The architecture must not assume always-connected, high-powered clients. A [button on a wall](device-attestation.md) is a first-class citizen.
-5. **Tenant isolation is absolute** -- [Customer-managed keys](key-management.md), zero-knowledge for the operator. Crypto-shredding on offboarding. Key loss = data loss, by design.
+4. **Device diversity** -- The architecture must not assume always-connected, high-powered clients. A [button on a wall](../design/device-attestation.md) is a first-class citizen.
+5. **Tenant isolation is absolute** -- [Customer-managed keys](../design/key-management.md), zero-knowledge for the operator. Crypto-shredding on offboarding. Key loss = data loss, by design.
 6. **Minimize burden** -- On employees (single-gesture responses, infrequent polls), on admins (system-managed sampling, smart defaults), on operators (single deployment, multi-tenant).
 
 ---

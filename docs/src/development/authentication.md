@@ -48,7 +48,7 @@ This is intentional. Never work around it.
 ### The Authenticator Trait
 
 ```rust
-{{#include ../../crates/pulse-identity/src/auth.rs:authenticator_trait}}
+{{#include ../../../crates/pulse-identity/src/auth.rs:authenticator_trait}}
 ```
 
 ### Example: Google OIDC Provider

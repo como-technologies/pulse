@@ -110,7 +110,7 @@ The security of blind signatures rests on the mathematical properties of the bli
 The token payload `T` is defined in `pulse-protocol`:
 
 ```rust
-{{#include ../../crates/pulse-protocol/src/token.rs:token_payload}}
+{{#include ../../../crates/pulse-protocol/src/token.rs:token_payload}}
 ```
 
 ### 2.5 Spent-Token Ledger
@@ -308,9 +308,9 @@ All protocol messages are serialized with [postcard](https://docs.rs/postcard) b
 | Collector → Client | `ResponseAck` | Accepted (empty). |
 | Collector → Client | `ResponseReject` | `reason`: `InvalidSignature`, `TokenExpired`, `TokenAlreadySpent`, `BatchMismatch`, `TenantMismatch`, or `Malformed` |
 
-Success responses (`TokenResponse`, `QuestionDelivery`, `ResponseAck`) use postcard binary. Denials and rejections (`TokenDenied`, `ResponseReject`) are returned as JSON error responses with `{ "code": "...", "message": "..." }` shape — see [Error Handling](error-handling-and-tracing.md).
+Success responses (`TokenResponse`, `QuestionDelivery`, `ResponseAck`) use postcard binary. Denials and rejections (`TokenDenied`, `ResponseReject`) are returned as JSON error responses with `{ "code": "...", "message": "..." }` shape — see [Error Handling](../development/error-handling-and-tracing.md).
 
-Message types are defined in `pulse-protocol`. See the [Crate Structure](crate-structure.md) for module layout.
+Message types are defined in `pulse-protocol`. See the [Crate Structure](../development/README.md) for module layout.
 
 ---
 

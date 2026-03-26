@@ -2,7 +2,7 @@
 
 *Describes the cryptographic isolation model, envelope encryption architecture, and key lifecycle.*
 
-*Parent document: [Architecture](architecture.md)*
+*Parent document: [Architecture](README.md)*
 
 ---
 

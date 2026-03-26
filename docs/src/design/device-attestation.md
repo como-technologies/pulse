@@ -2,7 +2,7 @@
 
 *Describes how devices of varying capability and identity confidence participate in the Pulse system.*
 
-*Parent document: [Architecture](architecture.md)*
+*Parent document: [Architecture](README.md)*
 
 ---
 
@@ -116,7 +116,7 @@ Each location node can have devices. The Analytics Engine aggregates location si
 Every device in the system has an attestation profile, established during provisioning. The `AttestationClass` enum is the only part of the profile currently implemented — it is embedded in `TokenPayload` at issuance time. The full profile struct (device registration, capabilities, credential types, confidence-weighted analytics) is tracked in [#16](https://github.com/como-technologies/pulse/issues/16), which depends on the control plane architecture ([#11](https://github.com/como-technologies/pulse/issues/11)).
 
 ```rust
-{{#include ../../crates/pulse-protocol/src/token.rs:attestation_class}}
+{{#include ../../../crates/pulse-protocol/src/token.rs:attestation_class}}
 ```
 
 The remaining fields below are the intended shape of the full attestation profile:

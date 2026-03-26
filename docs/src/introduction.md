@@ -68,6 +68,6 @@ Better data. Better decisions. Because people told you the truth.
 
 ## Learn More
 
-- **[Vision & Principles](vision.md)** — design philosophy, core capabilities in detail, and open design areas
-- **[System Architecture](architecture.md)** — how the system is built
-- **[Anonymity Protocol](anonymity-protocol.md)** — the cryptographic protocol that makes it work
+- **[Vision & Principles](concepts/README.md)** — design philosophy, core capabilities in detail, and open design areas
+- **[System Architecture](design/README.md)** — how the system is built
+- **[Anonymity Protocol](design/anonymity-protocol.md)** — the cryptographic protocol that makes it work
