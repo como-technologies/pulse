@@ -16,9 +16,10 @@ use pulse_identity::{
     Authenticator, InMemorySessionStore, QuestionBatch, SamplingEngine, SessionStore, TokenIssuer,
 };
 use pulse_protocol::messages::ResponseType;
-use pulse_protocol::{QuestionText, TenantId, UnixTimestamp};
+use pulse_protocol::{KeyVersion, QuestionText, TenantId, UnixTimestamp};
 use pulse_signal::{
     InMemoryLedger, InMemoryStore, ResponseCollector, ResponseStore, SpentTokenLedger,
+    TenantVerificationKeyStore,
 };
 
 use pulse_server::cmk::CmkProvider;
@@ -193,6 +194,12 @@ async fn main() -> anyhow::Result<()> {
 
     let sampling_engine = create_sampling_engine(&config)?;
 
+    // Retrieve the public key for client bootstrapping
+    let key_version = KeyVersion(config.key_version);
+    let public_key = tenant_key_store
+        .verification_key(&default_tenant_id, &key_version)
+        .expect("public key must exist after provisioning");
+
     // Identity zone state — authentication, sessions, token issuance, sampling
     let identity_state = Arc::new(IdentityState {
         issuer: TokenIssuer::with_sampling(tenant_key_store.clone(), sampling_engine.clone()),
@@ -200,6 +207,8 @@ async fn main() -> anyhow::Result<()> {
         session_store,
         sampling_engine,
         tenant_id: default_tenant_id,
+        public_key,
+        key_version,
     });
 
     // Analytics engine — decrypts response payloads and aggregates by segment
@@ -219,6 +228,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Identity zone router — authenticated endpoints
     let identity_router = Router::new()
+        .route("/config", get(identity_routes::get_config))
         .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_questions))
         .route("/token/sign", post(identity_routes::sign_token))

@@ -8,12 +8,13 @@ _How client applications are structured across deployment targets._
 
 All clients share a single Rust core library (`pulse-client`) that implements the complete client-side protocol. Platform-specific applications are thin shells that provide UI and platform integration on top of this core.
 
-| Shell          | Wrapper               | Distribution                                       |
-| -------------- | --------------------- | -------------------------------------------------- |
-| Web / WASM     | wasm-bindgen          | Deploy-at-once (web asset)                         |
-| Desktop        | Native binary         | Enterprise UEM (Intune, SCCM, Jamf) or self-update |
-| Mobile         | UniFFI (iOS, Android) | App stores                                         |
-| Embedded / IoT | `no_std`              | OTA firmware (embassy-boot)                        |
+| Shell          | Wrapper               | Distribution                                       | Status      |
+| -------------- | --------------------- | -------------------------------------------------- | ----------- |
+| TUI            | ratatui + crossterm   | Development and demos                              | Implemented |
+| Web / WASM     | wasm-bindgen          | Deploy-at-once (web asset)                         | Planned     |
+| Desktop        | Native binary         | Enterprise UEM (Intune, SCCM, Jamf) or self-update | Planned     |
+| Mobile         | UniFFI (iOS, Android) | App stores                                         | Planned     |
+| Embedded / IoT | `no_std`              | OTA firmware (embassy-boot)                        | Planned     |
 
 The core library is the bulk of the client investment. Shell priority can shift based on market signals — developer velocity favors WASM, enterprise buyers favor UEM-managed desktop, broad reach favors mobile — without rearchitecting. The first production shell is a market decision, not an engineering one.
 
@@ -44,7 +45,11 @@ pulse-client
 
 `pulse-client` must **never** depend on `pulse-identity` or `pulse-signal`. Those are server-side zone implementations. The client bridges both zones through the protocol, not through code sharing.
 
-**Transport abstraction:** The crate defines a trait for HTTP operations so that shells can provide platform-appropriate implementations — `reqwest` on desktop, platform HTTP on mobile via UniFFI, `fetch` in WASM, and custom transports on embedded.
+**Transport abstraction:** The crate defines an `HttpTransport` trait for HTTP operations so that shells can provide platform-appropriate implementations — `reqwest` on desktop (shipped as `ReqwestTransport`, feature-gated behind `reqwest-transport`), platform HTTP on mobile via UniFFI, `fetch` in WASM, and custom transports on embedded.
+
+**Token state machine:** The token lifecycle uses a typestate pattern — `BlindedTokenState` → `SignedTokenState` → `ReadyToken` — enforcing correct protocol progression at compile time. Each state transition consumes the previous state, making it impossible to reuse a token or skip a step.
+
+**Orchestrator:** `PulseClient<T: HttpTransport>` is the high-level entry point. Each method maps to one network round-trip or one local crypto operation: `authenticate` → `fetch_questions` → `blind_token` → `request_signature` → `finalize_token` → `submit_response`.
 
 ---
 

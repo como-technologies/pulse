@@ -6,6 +6,8 @@ members = [
     "crates/pulse-signal",
     "crates/pulse-server",
     "crates/pulse-relay",
+    "crates/pulse-client",
+    "crates/pulse-tui",
 ]
 resolver = "2"
 
@@ -52,3 +54,7 @@ tower-http = { version = "0.6.8", features = ["trace", "request-id", "util"] }
 tracing-test = "0.2"
 rusqlite = { version = "0.35", features = ["bundled"] }
 tempfile = "3"
+
+# TUI
+ratatui = "0.30.0"
+crossterm = "0.29.0"

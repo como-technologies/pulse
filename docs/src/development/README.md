@@ -8,7 +8,8 @@ crates/
   pulse-protocol/    Wire types and message definitions
   pulse-identity/    Identity zone domain logic
   pulse-signal/      Signal zone domain logic
-  pulse-client/      Client-side protocol (planned — see Client Architecture)
+  pulse-client/      Client-side protocol library
+  pulse-tui/         Interactive terminal client (ratatui)
   pulse-server/      HTTP layer (Axum) — composition root
   pulse-relay/       Anonymizing relay (standalone binary)
 ```
@@ -42,9 +43,20 @@ Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `
 
 ## pulse-client
 
-Client-side protocol state machine. Platform-agnostic — no I/O, no UI. Handles token blinding/unblinding, pseudonym derivation, response encryption, and submission timing. Depends on `pulse-crypto` and `pulse-protocol` only. See [Client Architecture](client-architecture.md) for the full design.
+Client-side protocol state machine. Platform-agnostic — no I/O, no UI, no platform-specific code.
 
-**Status:** Planned for M0. Not yet implemented.
+- `HttpTransport` trait — pluggable HTTP transport (ships with `ReqwestTransport` behind a feature flag)
+- `BlindedTokenState` → `SignedTokenState` → `ReadyToken` — typestate pattern enforcing the token lifecycle at compile time
+- `PulseClient<T>` — high-level orchestrator: authenticate, fetch questions, blind/sign/unblind tokens, submit responses
+- Protocol helpers — pseudonym derivation, response encryption, epoch computation
+
+Depends on `pulse-crypto` and `pulse-protocol` only. See [Client Architecture](client-architecture.md) for the full design.
+
+## pulse-tui
+
+Interactive terminal client built with [ratatui](https://ratatui.rs/). Exercises the complete protocol flow end-to-end in a fully interactive TUI: connect, authenticate, browse questions, acquire a blind-signed token, enter a response, and submit anonymously. Includes a color-coded protocol log panel showing what each trust zone sees.
+
+Depends on `pulse-client` for all protocol operations — no server-side crate dependencies.
 
 ## Trust zone isolation
 
@@ -77,7 +89,12 @@ pulse-server                 pulse-relay (standalone, no domain deps)
        -> pulse-protocol
        -> pulse-crypto
 
-pulse-client (planned)
+pulse-client
+  -> pulse-protocol
+  -> pulse-crypto
+
+pulse-tui
+  -> pulse-client
   -> pulse-protocol
   -> pulse-crypto
 ```

@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use pulse_crypto::BrssPublicKey;
 use pulse_identity::{Authenticator, SamplingEngine, SessionStore, TokenIssuer};
-use pulse_protocol::TenantId;
+use pulse_protocol::{KeyVersion, TenantId};
 use pulse_signal::{ResponseCollector, ResponseStore};
 
 use crate::analytics::AnalyticsEngine;
@@ -43,6 +44,10 @@ pub struct IdentityState {
     pub sampling_engine: Arc<dyn SamplingEngine>,
     /// Default tenant for this identity zone instance (dev simplification).
     pub tenant_id: TenantId,
+    /// Public verification key for clients to blind tokens against.
+    pub public_key: BrssPublicKey,
+    /// Current signing key version.
+    pub key_version: KeyVersion,
 }
 
 /// Signal zone state. Holds response collection, storage, and analytics.

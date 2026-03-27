@@ -1,0 +1,29 @@
+[package]
+name = "pulse-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-agnostic protocol client for Pulse anonymous polling"
+
+[dependencies]
+pulse-protocol = { path = "../pulse-protocol" }
+pulse-crypto = { path = "../pulse-crypto" }
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+postcard.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+reqwest = { workspace = true, optional = true }
+
+[features]
+default = ["reqwest-transport"]
+reqwest-transport = ["dep:reqwest"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+pulse-server = { path = "../pulse-server" }
+pulse-identity = { path = "../pulse-identity" }
+pulse-signal = { path = "../pulse-signal" }
+axum.workspace = true

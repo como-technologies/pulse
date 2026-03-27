@@ -17,22 +17,16 @@ use pulse_server::dev_sampling::DevSamplingEngine;
 use pulse_server::dev_tenant_keys::InMemoryTenantKeyStore;
 use pulse_server::{IdentityState, SignalState, identity_routes, signal_routes};
 
-#[allow(dead_code)] // Fields used by different test crates
+#[allow(dead_code)]
 pub struct TestServers {
     pub identity_url: String,
     pub signal_url: String,
-    pub identity_state: Arc<IdentityState>,
     pub batch_id: QuestionBatchId,
     pub tenant_id: TenantId,
     pub pk: pulse_crypto::BrssPublicKey,
-    /// Analytics DEK, if analytics was provisioned.
     pub analytics_dek: Option<[u8; 32]>,
 }
 
-/// Start test servers with optional analytics support.
-///
-/// When `with_analytics` is true, provisions a CMK, DEK store, and analytics engine
-/// so that the `/analytics/batch/{batch_id}` route is available.
 pub async fn start_test_servers(with_analytics: bool) -> TestServers {
     let kp = blind_sig::generate_keypair().unwrap();
     let pk = kp.pk.clone();
@@ -52,7 +46,6 @@ pub async fn start_test_servers(with_analytics: bool) -> TestServers {
     };
     let sampling_engine: Arc<dyn SamplingEngine> = Arc::new(DevSamplingEngine::new(batch, 1));
 
-    // Optionally provision analytics infrastructure
     let (analytics, analytics_dek) = if with_analytics {
         use pulse_server::analytics::AnalyticsEngine;
         use pulse_server::cmk::CmkProvider;
@@ -91,20 +84,12 @@ pub async fn start_test_servers(with_analytics: bool) -> TestServers {
         .route("/auth", post(identity_routes::auth))
         .route("/question", get(identity_routes::get_questions))
         .route("/token/sign", post(identity_routes::sign_token))
-        .with_state(identity_state.clone());
+        .with_state(identity_state);
 
-    let mut signal_router = Router::new()
+    let signal_router = Router::new()
         .route("/response", post(signal_routes::submit_response))
-        .route("/debug/responses", get(signal_routes::debug_responses));
-
-    if with_analytics {
-        signal_router = signal_router.route(
-            "/analytics/batch/{batch_id}",
-            get(pulse_server::analytics_routes::aggregate_batch),
-        );
-    }
-
-    let signal_router = signal_router.with_state(signal_state);
+        .route("/debug/responses", get(signal_routes::debug_responses))
+        .with_state(signal_state);
 
     let identity_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let signal_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -118,7 +103,6 @@ pub async fn start_test_servers(with_analytics: bool) -> TestServers {
     TestServers {
         identity_url: format!("http://{identity_addr}"),
         signal_url: format!("http://{signal_addr}"),
-        identity_state,
         batch_id,
         tenant_id,
         pk,

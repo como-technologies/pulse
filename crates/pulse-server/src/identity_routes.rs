@@ -11,6 +11,28 @@ use crate::auth_extractor::AuthenticatedEmployee;
 use crate::binary::Binary;
 use crate::error::ApiError;
 
+// ── Config (client bootstrap) ──
+
+#[derive(Serialize)]
+pub struct ConfigResponse {
+    pub tenant_id: String,
+    pub key_version: u32,
+    pub public_key_pem: String,
+}
+
+/// Return server configuration needed by clients: tenant ID, key version, and public key.
+pub async fn get_config(State(state): State<Arc<IdentityState>>) -> Json<ConfigResponse> {
+    let pem = state
+        .public_key
+        .to_pem()
+        .expect("public key PEM encoding cannot fail");
+    Json(ConfigResponse {
+        tenant_id: state.tenant_id.0.to_string(),
+        key_version: state.key_version.0,
+        public_key_pem: pem,
+    })
+}
+
 // ── Auth ──
 
 #[derive(Deserialize)]
