@@ -62,8 +62,8 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 |---|---|
 | **Attacker** | Compromised relay, or network-level observer |
 | **Attack** | Correlate source IP of Phase 1 (token acquisition) with source IP of Phase 2 (response submission) |
-| **Mitigation** | (1) The anonymizing relay strips source IP before forwarding to the Response Collector. (2) Phase 1 and Phase 2 use separate endpoints and connections. (3) The relay does not log source IPs. |
-| **Residual risk** | A compromised relay operator can see source IPs on the incoming side, but cannot read response content (encrypted). If the relay operator also has Identity access, they could correlate IPs to identities for timing windows. Mitigation: the relay is operated as a minimal, auditable component with strict access controls. Defense in depth: clients could optionally use VPN/Tor for Phase 2. |
+| **Mitigation** | (1) The anonymizing relay strips source IP before forwarding to the Response Collector. (2) Phase 1 and Phase 2 use separate endpoints and connections. (3) The relay does not log source IPs. (4) In typical enterprise deployments, corporate NAT, VPN concentrators, and mobile CGNAT mean the relay sees a shared gateway IP, not individual employee IPs — see T17 for detailed analysis. |
+| **Residual risk** | Low in theory, but **near-zero in practice** for most enterprise deployments. Corporate NAT/VPN means the relay sees the company's exit IP, not individual employees. The edge case is a remote worker on a residential connection outside VPN — even then, correlating IP to identity requires compromising both the relay and the Identity zone. |
 
 #### T4: Behavioral Fingerprinting via Pseudonym
 
@@ -188,6 +188,28 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 | **Mitigation** | (1) The ledger should be stored in a durable, replicated data store with integrity guarantees. (2) Append-only design (entries are added, never deleted except for expired-token pruning). (3) Regular integrity checksums. |
 | **Residual risk** | Low with standard infrastructure practices. Ledger corruption would allow replay but not forgery (still requires valid signatures). |
 
+### 3.5 Relay Trust Threats
+
+#### T17: Compromised Relay Operator (Surveillance)
+
+| | |
+|---|---|
+| **Attacker** | Compromised Relay |
+| **Attack** | Log source IPs and submission timestamps to learn which network locations are submitting, and when |
+| **What the relay can see** | Source IP address (usually a NAT gateway, not an individual), encrypted payload size, submission timing |
+| **What the relay cannot see** | Response content (encrypted), employee identity, which question was answered, segment labels, pseudonym |
+| **Mitigation** | (1) **Corporate NAT**: enterprise desktops share a NAT gateway IP — the relay sees the company, not the individual. (2) **VPN**: remote workers route through a VPN concentrator — same exit IP as office workers. (3) **Mobile CGNAT**: carrier-grade NAT shares IPs across thousands of subscribers with frequent rotation. (4) **Batch-and-shuffle**: the relay's own batching breaks timing correlation between individual arrivals and Signal zone delivery. (5) **No auth context**: the relay has no authentication data — it cannot map an IP to an employee without compromising the Identity zone as well. |
+| **Residual risk** | **Near-zero for corporate deployments** (NAT/VPN covers virtually all employees). **Low for edge cases** (remote worker on residential IP outside VPN). Even in the edge case, deanonymization requires compromising both the relay AND the Identity zone — a cross-zone attack that violates the trust model. |
+
+#### T18: Compromised Relay Operator (Selective Denial)
+
+| | |
+|---|---|
+| **Attacker** | Compromised Relay |
+| **Attack** | Selectively drop or delay submissions from specific source IPs to suppress responses, skew results, or silence targeted individuals |
+| **Mitigation** | (1) **Analytics anomaly detection**: unexpected drops in response rates for segments or time windows surface as statistical anomalies in the Analytics Engine. (2) **Client-side ack verification**: the client expects a `ResponseAck` — a missing ack signals a dropped submission, enabling retry or alerting. (3) **Issuance/submission reconciliation**: comparing tokens issued (Identity zone count) vs responses received (Signal zone count) reveals suppression — a significant gap is an operational red flag. (4) **Multi-relay deployment**: deploying multiple relay instances operated by different parties, with clients selecting randomly, prevents any single operator from suppressing all submissions from a target. |
+| **Residual risk** | Low. Selective suppression is detectable through multiple independent channels (analytics anomalies, ack failures, issuance/submission reconciliation). A brief suppression window may go unnoticed, but sustained suppression will surface. |
+
 ---
 
 ## 4. Trust Boundary Diagram with Threats
@@ -218,10 +240,12 @@ Each threat is assessed against a set of attacker profiles with varying capabili
                     T3: IP correlation               |
                               |                      |
                               v                      |
-                    +-- [RELAY] --+                   |
-                    | T14: DoS    |                   |
-                    | T10: Tamper |                   |
-                    +-------------+                   |
+                    +--- [RELAY] ---+                  |
+                    | T14: DoS      |                  |
+                    | T10: Tamper   |                  |
+                    | T17: Surveil  |                  |
+                    | T18: Suppress |                  |
+                    +---------------+                  |
                               |                      |
                               v                      v
 +========================[Signal]========================+
@@ -247,7 +271,7 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 |--------|----------|-----------|---------------|-------------------|
 | T1: Token/response correlation | Critical | Low | None | Blind signatures (mathematical) |
 | T2: Timing correlation | High | Medium | Low | Random delays + relay batching |
-| T3: IP correlation | High | Medium | Low | Mandatory anonymizing relay |
+| T3: IP correlation | High | Medium | Near-zero (enterprise) | Relay + NAT/VPN/CGNAT |
 | T4: Behavioral fingerprinting | Medium | Medium | Medium (free-text) | Epoch rotation + k-anonymity |
 | T5: Small group deanon | High | Medium | None (below k) | Issuance-time segment coarsening |
 | T6: Org structure manipulation | High | Low | Low | Audit logging + policy controls |
@@ -261,6 +285,8 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 | T14: Anonymous channel DoS | Medium | Medium | Medium | Rate limiting + proof-of-work |
 | T15: Token issuance flood | Low | Low | Low | Auth + rate limiting |
 | T16: Ledger corruption | High | Very low | Low | Durable storage + integrity checks |
+| T17: Relay operator surveillance | Medium | Medium | Near-zero (enterprise) | NAT/VPN/CGNAT + no auth context |
+| T18: Relay operator selective denial | Medium | Low | Low | Analytics anomalies + ack verification + reconciliation |
 
 ---
 
@@ -272,3 +298,4 @@ Each threat is assessed against a set of attacker profiles with varying capabili
 4. **K-anonymity threshold guidance:** Provide tenants with guidance on setting k values. Higher k = stronger privacy but coarser analytics. Default recommendation: k >= 5 for most organizations, k >= 10 for sensitive contexts.
 5. **Audit logging:** All administrative actions (org structure changes, policy changes, campaign creation) should be immutably logged for forensic analysis of T6-type attacks.
 6. **Proof-of-work calibration:** If proof-of-work is adopted for DoS mitigation (T14), the difficulty must be calibrated for the weakest supported client (IoT button). This may limit its effectiveness or require per-device-class difficulty levels.
+7. **Transport tier options (future):** For high-sensitivity deployments where even the residual relay trust (T17) is unacceptable, consider optional transport tiers: multi-relay deployments (different operators, client-selected), relay chains (2+ hops), I2P garlic routing (via embeddable Rust router [emissary-core](https://github.com/altonen/emissary)), Tor hidden services (via [arti](https://gitlab.torproject.org/tpo/core/arti)), or TEE-based relay enclaves. The `pulse-client` transport trait (`HttpTransport`) is designed for this pluggability. These are defense-in-depth enhancements, not urgent — the blind signature protocol provides the primary anonymity guarantee independent of transport.
