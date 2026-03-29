@@ -38,4 +38,4 @@ crates/
 
 ## License
 
-UNLICENSED
+UNLICENSED — source is public for transparency; no license is granted.
