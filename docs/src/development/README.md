@@ -4,14 +4,14 @@ Pulse is a Cargo workspace with crates layered by responsibility.
 
 ```
 crates/
-  pulse-crypto/      Cryptographic primitives
-  pulse-protocol/    Wire types and message definitions
-  pulse-identity/    Identity zone domain logic
-  pulse-signal/      Signal zone domain logic
-  pulse-client/      Client-side protocol library
-  pulse-tui/         Interactive terminal client (ratatui)
-  pulse-server/      HTTP layer (Axum) — composition root
-  pulse-relay/       Anonymizing relay (standalone binary)
+  pulse-crypto/         Cryptographic primitives
+  pulse-protocol/       Wire types and message definitions
+  pulse-identity/       Identity zone domain logic
+  pulse-signal/         Signal zone domain logic
+  pulse-client/         Client-side protocol library
+  pulse-server/         HTTP layer (Axum) — composition root
+  pulse-relay/          Anonymizing relay (standalone binary)
+  pulse-test-harness/   Test harness and simulation framework
 ```
 
 ## pulse-crypto
@@ -45,18 +45,13 @@ Domain logic depends on trait abstractions (e.g., `Arc<dyn SpentTokenLedger>`, `
 
 Client-side protocol state machine. Platform-agnostic — no I/O, no UI, no platform-specific code.
 
-- `HttpTransport` trait — pluggable HTTP transport (ships with `ReqwestTransport` behind a feature flag)
+- `ProtocolEngine` — sync core: message building, response parsing, crypto operations (no async, future `no_std` extraction point)
+- `PulseClient<T>` → `ConnectedClient<T>` — typestate flow enforcing connection state at compile time
 - `BlindedTokenState` → `SignedTokenState` → `ReadyToken` — typestate pattern enforcing the token lifecycle at compile time
-- `PulseClient<T>` — high-level orchestrator: authenticate, fetch questions, blind/sign/unblind tokens, submit responses
+- `HttpTransport` trait — pluggable HTTP transport (ships with `ReqwestTransport` behind a feature flag)
 - Protocol helpers — pseudonym derivation, response encryption, epoch computation
 
 Depends on `pulse-crypto` and `pulse-protocol` only. See [Client Architecture](client-architecture.md) for the full design.
-
-## pulse-tui
-
-Interactive terminal client built with [ratatui](https://ratatui.rs/). Exercises the complete protocol flow end-to-end in a fully interactive TUI: connect, authenticate, browse questions, acquire a blind-signed token, enter a response, and submit anonymously. Includes a color-coded protocol log panel showing what each trust zone sees.
-
-Depends on `pulse-client` for all protocol operations — no server-side crate dependencies.
 
 ## Trust zone isolation
 
@@ -78,6 +73,17 @@ Standalone anonymizing relay binary. Transport-level anonymizer between clients 
 
 No domain crate dependencies -- treats all payloads as opaque bytes. See the [Anonymizing Relay](relay.md) guide.
 
+## pulse-test-harness
+
+Test harness and simulation framework. Consolidates shared test infrastructure (test servers, mock transport) and provides a multi-tenant concurrent simulation runner.
+
+- `start_test_servers()` — spins up ephemeral Identity + Signal zone servers with dev providers
+- `MockTransport` — in-memory `HttpTransport` for deterministic testing without network I/O
+- Simulation framework — configurable multi-tenant concurrent protocol simulation with per-operation timing statistics
+- `pulse-simulate` binary — CLI for running simulations (`cargo run -p pulse-test-harness --bin pulse-simulate`)
+
+Used as a dev-dependency by `pulse-client` and `pulse-server` for integration tests. See the [Verification Guide](verification.md) for details.
+
 ## Dependency Graph
 
 ```
@@ -93,17 +99,17 @@ pulse-client
   -> pulse-protocol
   -> pulse-crypto
 
-pulse-tui
+pulse-test-harness (dev/test only)
   -> pulse-client
-  -> pulse-protocol
-  -> pulse-crypto
+  -> pulse-server
+  -> pulse-protocol, pulse-crypto, pulse-identity, pulse-signal
 ```
 
 ## Technology Stack
 
 | Layer                | Choice            | Notes                                                                  |
 | -------------------- | ----------------- | ---------------------------------------------------------------------- |
-| Language             | Rust              | End-to-end: server, client, WASM, mobile (UniFFI), embedded (`no_std`) |
+| Language             | Rust              | End-to-end: server, client, desktop, mobile, embedded (`no_std`)       |
 | HTTP framework       | Axum + Tokio      | Server composition root                                                |
 | Blind signatures     | RSA per RFC 9474  | EC-based schemes as future option for constrained devices              |
 | Wire format          | Postcard (binary) | Compact, serde-native, `no_std`-compatible across all targets          |

@@ -20,14 +20,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install mdbook
         uses: taiki-e/install-action@mdbook
 
+      - name: Install mdbook-gruvbox theme
+        run: cargo install mdbook-gruvbox && mdbook-gruvbox install docs
+
       - name: Build book
         run: mdbook build docs
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
 
       - name: Build API docs
         run: cargo doc --no-deps --workspace

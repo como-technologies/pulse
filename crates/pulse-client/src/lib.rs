@@ -6,11 +6,13 @@
 //!
 //! # Architecture
 //!
+//! - **`engine`**: Sync protocol engine (message building, response parsing, crypto)
 //! - **`transport`**: HTTP transport trait with a reqwest implementation
 //! - **`token_state`**: Typestate pattern for the token lifecycle
 //! - **`protocol`**: Stateless helpers (pseudonym derivation, response encryption)
-//! - **`flow`**: `PulseClient<T>` orchestrator tying everything together
+//! - **`flow`**: `PulseClient<T>` → `ConnectedClient<T>` typestate orchestrators
 
+pub mod engine;
 pub mod error;
 pub mod flow;
 pub mod protocol;
@@ -18,8 +20,9 @@ pub mod token_state;
 pub mod transport;
 
 // Re-export key types
+pub use engine::ProtocolEngine;
 pub use error::ClientError;
-pub use flow::{PulseClient, ServerConfig, SessionContext};
+pub use flow::{ConnectedClient, PulseClient, ServerConfig, SessionContext};
 pub use protocol::{current_epoch, derive_pseudonym, encrypt_response, generate_employee_secret};
 pub use pulse_protocol::messages::ResponseSubmit;
 pub use token_state::{BlindedTokenState, ReadyToken, SignedTokenState};

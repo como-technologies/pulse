@@ -1,7 +1,7 @@
 //! Tests verifying structured error responses with correct HTTP status codes
 //! and machine-readable error codes.
 
-mod common;
+use pulse_test_harness::start_test_servers;
 
 use pulse_crypto::{aead, blind_sig};
 use pulse_protocol::messages::{ResponseSubmit, TokenRequest, TokenResponse};
@@ -76,7 +76,7 @@ async fn sign_token_flow(
 
 #[tokio::test]
 async fn duplicate_submission_returns_422_with_error_code() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
     let encryption_key = aead::generate_key();
 
@@ -123,7 +123,7 @@ async fn duplicate_submission_returns_422_with_error_code() {
 
 #[tokio::test]
 async fn forged_signature_returns_422() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     let token = TokenPayload {
@@ -160,7 +160,7 @@ async fn forged_signature_returns_422() {
 
 #[tokio::test]
 async fn batch_mismatch_returns_422() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
     let wrong_batch_id = QuestionBatchId::new();
 
@@ -195,7 +195,7 @@ async fn batch_mismatch_returns_422() {
 
 #[tokio::test]
 async fn empty_api_key_returns_401() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     let resp = client
@@ -213,7 +213,7 @@ async fn empty_api_key_returns_401() {
 
 #[tokio::test]
 async fn missing_auth_header_returns_401() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // GET /question without Authorization header
@@ -230,7 +230,7 @@ async fn missing_auth_header_returns_401() {
 
 #[tokio::test]
 async fn invalid_session_token_returns_401() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // POST /token/sign with a fake session token
@@ -253,7 +253,7 @@ async fn invalid_session_token_returns_401() {
 
 #[tokio::test]
 async fn error_response_has_consistent_structure() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // Submit with forged signature to trigger an error

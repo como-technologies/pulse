@@ -23,5 +23,5 @@
   - [Multi-Tenancy Providers](development/multi-tenancy-providers.md)
   - [Anonymizing Relay](development/relay.md)
   - [Error Handling and Tracing](development/error-handling-and-tracing.md)
-  - [Verification Guide](development/verification.md)
+  - [Testing & Simulation](development/verification.md)
   - [API Reference](development/api-reference.md)

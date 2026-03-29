@@ -1,21 +1,20 @@
-//! Integration test: full protocol flow using PulseClient against real HTTP servers.
-
-mod common;
+//! Integration test: full protocol flow using ConnectedClient against real HTTP servers.
 
 use pulse_client::{
-    PulseClient, ReqwestTransport, current_epoch, derive_pseudonym, encrypt_response,
+    ConnectedClient, ReqwestTransport, current_epoch, derive_pseudonym, encrypt_response,
     generate_employee_secret,
 };
 use pulse_protocol::KeyVersion;
 use pulse_protocol::messages::{ResponseData, ResponseType};
 use pulse_protocol::token::AttestationClass;
+use pulse_test_harness::start_test_servers;
 
 #[tokio::test]
 async fn full_flow_via_pulse_client() {
-    let servers = common::start_test_servers(true).await;
+    let servers = start_test_servers(true).await;
     let analytics_dek = servers.analytics_dek.unwrap();
 
-    let client = PulseClient::with_config(
+    let client = ConnectedClient::with_config(
         ReqwestTransport::new(),
         servers.identity_url.clone(),
         servers.signal_url.clone(),
@@ -64,9 +63,9 @@ async fn full_flow_via_pulse_client() {
 
 #[tokio::test]
 async fn duplicate_submission_rejected() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
 
-    let client = PulseClient::with_config(
+    let client = ConnectedClient::with_config(
         ReqwestTransport::new(),
         servers.identity_url.clone(),
         servers.signal_url.clone(),
@@ -124,9 +123,9 @@ async fn duplicate_submission_rejected() {
 
 #[tokio::test]
 async fn frequency_cap_enforced() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
 
-    let client = PulseClient::with_config(
+    let client = ConnectedClient::with_config(
         ReqwestTransport::new(),
         servers.identity_url.clone(),
         servers.signal_url.clone(),

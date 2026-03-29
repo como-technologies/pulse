@@ -9,6 +9,9 @@ git-repository-url = "https://github.com/como-technologies/pulse"
 edit-url-template = "https://github.com/como-technologies/pulse/edit/main/docs/src/{path}"
 
 sidebar-header-nav = false
+theme = "gruvbox"
+default-theme = "gruvbox"
+preferred-dark-theme = "gruvbox"
 
 [output.html.fold]
 enable = true

@@ -10,13 +10,11 @@ All clients share a single Rust core library (`pulse-client`) that implements th
 
 | Shell          | Wrapper               | Distribution                                       | Status      |
 | -------------- | --------------------- | -------------------------------------------------- | ----------- |
-| TUI            | ratatui + crossterm   | Development and demos                              | Implemented |
-| Web / WASM     | wasm-bindgen          | Deploy-at-once (web asset)                         | Planned     |
-| Desktop        | Native binary         | Enterprise UEM (Intune, SCCM, Jamf) or self-update | Planned     |
-| Mobile         | UniFFI (iOS, Android) | App stores                                         | Planned     |
-| Embedded / IoT | `no_std`              | OTA firmware (embassy-boot)                        | Planned     |
+| Desktop        | Slint (native Rust)   | Enterprise UEM (Intune, SCCM, Jamf) or self-update | Planned     |
+| Mobile         | Slint (native Rust)   | App stores                                         | Planned     |
+| Embedded / IoT | Slint MCU / `no_std`  | OTA firmware (embassy-boot)                        | Planned     |
 
-The core library is the bulk of the client investment. Shell priority can shift based on market signals — developer velocity favors WASM, enterprise buyers favor UEM-managed desktop, broad reach favors mobile — without rearchitecting. The first production shell is a market decision, not an engineering one.
+All shells use [Slint](https://slint.dev/) — a pure Rust, declarative UI toolkit that targets desktop, mobile, and embedded from a single codebase. The core library is the bulk of the client investment. Shell priority can shift based on market signals without rearchitecting.
 
 ---
 
@@ -45,11 +43,17 @@ pulse-client
 
 `pulse-client` must **never** depend on `pulse-identity` or `pulse-signal`. Those are server-side zone implementations. The client bridges both zones through the protocol, not through code sharing.
 
-**Transport abstraction:** The crate defines an `HttpTransport` trait for HTTP operations so that shells can provide platform-appropriate implementations — `reqwest` on desktop (shipped as `ReqwestTransport`, feature-gated behind `reqwest-transport`), platform HTTP on mobile via UniFFI, `fetch` in WASM, and custom transports on embedded.
+**Transport abstraction:** The crate defines an `HttpTransport` trait for HTTP operations so that shells can provide platform-appropriate implementations — `reqwest` on desktop/mobile (shipped as `ReqwestTransport`, feature-gated behind `reqwest-transport`), and custom transports on embedded.
 
-**Token state machine:** The token lifecycle uses a typestate pattern — `BlindedTokenState` → `SignedTokenState` → `ReadyToken` — enforcing correct protocol progression at compile time. Each state transition consumes the previous state, making it impossible to reuse a token or skip a step.
+**Sync core:** The `ProtocolEngine` handles all message construction, response parsing, and cryptographic operations synchronously — no async runtime required. This makes the core testable without tokio and portable to `no_std` environments.
 
-**Orchestrator:** `PulseClient<T: HttpTransport>` is the high-level entry point. Each method maps to one network round-trip or one local crypto operation: `authenticate` → `fetch_questions` → `blind_token` → `request_signature` → `finalize_token` → `submit_response`.
+**Typestate flow:** Protocol progression is enforced at compile time at three levels:
+
+1. **Connection state:** `PulseClient<T>` (disconnected) transitions to `ConnectedClient<T>` via `connect()`. Crypto operations like `blind_token()` only exist on `ConnectedClient` — calling them before connecting is a compile error.
+2. **Data-flow ordering:** Each method returns the type required by the next step. `authenticate()` → `SessionContext`, `blind_token()` → `BlindedTokenState`, etc. You cannot skip steps.
+3. **Token lifecycle:** `BlindedTokenState` → `SignedTokenState` → `ReadyToken`. Each transition consumes the previous state.
+
+**Orchestrator:** `ConnectedClient<T: HttpTransport>` is the high-level entry point. Each async method delegates to `ProtocolEngine` for sync work and uses the transport only for I/O: `authenticate` → `fetch_questions` → `blind_token` → `request_signature` → `finalize_token` → `submit_response`.
 
 ---
 
@@ -94,10 +98,4 @@ All protocol logic, cryptographic operations, and wire format handling stay in t
 
 ## Why This Architecture
 
-Three stakeholder perspectives pull in different directions:
-
-- **Developers** benefit from WASM-first iteration — fastest feedback loop, shared tooling, no app store gatekeeping.
-- **Enterprise buyers** want a UEM-compatible solution (Intune, SCCM, Jamf) that IT can deploy and manage centrally.
-- **Investors and owners** want whatever gets paying customers the fastest.
-
-Rather than betting on one platform prematurely, the core + shells architecture lets the team build the protocol client once and defer the shell priority decision until market signal clarifies which platform matters most. The postcard wire format is `no_std`-compatible, so even the embedded path shares serialization code with the server and desktop clients.
+The core + shells architecture lets the team build the protocol client once and target any platform Slint supports. Slint's pure-Rust rendering pipeline keeps the dependency tree minimal and the attack surface small — no web engine, no JavaScript runtime, no platform-specific UI frameworks. The postcard wire format is `no_std`-compatible, so even the embedded path shares serialization code with the server and desktop clients.

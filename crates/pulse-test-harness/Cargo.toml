@@ -1,0 +1,34 @@
+[package]
+name = "pulse-test-harness"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Test harness and simulation framework for Pulse protocol"
+
+[dependencies]
+pulse-client = { path = "../pulse-client", default-features = false }
+pulse-server = { path = "../pulse-server" }
+pulse-protocol = { path = "../pulse-protocol" }
+pulse-crypto = { path = "../pulse-crypto" }
+pulse-identity = { path = "../pulse-identity" }
+pulse-signal = { path = "../pulse-signal" }
+async-trait.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+postcard.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+reqwest = { workspace = true, optional = true }
+
+[features]
+default = []
+reqwest-transport = ["pulse-client/reqwest-transport", "dep:reqwest"]
+
+[[bin]]
+name = "pulse-simulate"
+path = "src/bin/simulate.rs"
+required-features = ["reqwest-transport"]

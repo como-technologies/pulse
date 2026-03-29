@@ -7,7 +7,7 @@ members = [
     "crates/pulse-server",
     "crates/pulse-relay",
     "crates/pulse-client",
-    "crates/pulse-tui",
+    "crates/pulse-test-harness",
 ]
 resolver = "2"
 
@@ -55,6 +55,3 @@ tracing-test = "0.2"
 rusqlite = { version = "0.35", features = ["bundled"] }
 tempfile = "3"
 
-# TUI
-ratatui = "0.30.0"
-crossterm = "0.29.0"

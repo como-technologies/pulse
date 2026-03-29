@@ -1,6 +1,6 @@
-# Verification Guide
+# Testing & Simulation
 
-How to verify Pulse's privacy and correctness properties.
+How to verify Pulse's privacy and correctness properties, and run protocol simulations at scale.
 
 ## Interactive walkthrough
 
@@ -69,11 +69,13 @@ cargo test --workspace
 ### By crate
 
 ```sh
-cargo test -p pulse-crypto       # blind sigs + AEAD + proptest
-cargo test -p pulse-protocol     # wire types, token serialization, sensitive redaction
-cargo test -p pulse-identity     # sampling engine, k-anonymity, frequency caps, sessions, token issuer
-cargo test -p pulse-signal       # spent-token ledger, response collector, tracing assertions
-cargo test -p pulse-server       # protocol flow, HTTP e2e, error responses, SQLite storage, key persistence
+cargo test -p pulse-crypto         # blind sigs + AEAD + proptest
+cargo test -p pulse-protocol       # wire types, token serialization, sensitive redaction
+cargo test -p pulse-identity       # sampling engine, k-anonymity, frequency caps, sessions, token issuer
+cargo test -p pulse-signal         # spent-token ledger, response collector, tracing assertions
+cargo test -p pulse-server         # protocol flow, HTTP e2e, error responses, SQLite storage, key persistence
+cargo test -p pulse-client         # ProtocolEngine sync logic, typestate lifecycle, integration tests
+cargo test -p pulse-test-harness   # harness self-tests (if any)
 ```
 
 ### By topic
@@ -180,3 +182,113 @@ Tests that verify core protocol properties (blind signature round-trip, replay p
 ### Dev providers in integration tests
 
 E2E and error response tests use `DevSamplingEngine` (accepts any employee) rather than `InMemorySamplingEngine` (requires explicit roster setup). This mirrors the actual composition used when running `cargo run` with default config, ensuring the dev experience itself is tested.
+
+### Test harness (`pulse-test-harness`)
+
+Shared test infrastructure lives in the `pulse-test-harness` crate, used as a dev-dependency by `pulse-client` and `pulse-server`.
+
+**`start_test_servers(with_analytics)`** — spins up ephemeral Identity and Signal zone servers on random ports with in-memory storage, dev providers, and optionally analytics. Replaces the previously duplicated `tests/common/mod.rs` files. Includes the `/config` endpoint for testing `PulseClient::connect()`.
+
+```rust
+use pulse_test_harness::start_test_servers;
+
+#[tokio::test]
+async fn my_test() {
+    let servers = start_test_servers(false).await;
+    // servers.identity_url, servers.signal_url, servers.pk, servers.tenant_id, etc.
+}
+```
+
+**`MockTransport`** — in-memory `HttpTransport` for testing without network I/O. Routes are matched by HTTP method + URL substring. Records all requests for assertion.
+
+```rust
+use pulse_test_harness::{MockTransport, HttpMethod};
+use pulse_client::TransportResponse;
+
+let transport = MockTransport::new()
+    .on(HttpMethod::PostJson, "/auth", TransportResponse {
+        status: 200,
+        body: br#"{"session_token":"tok-123"}"#.to_vec(),
+    });
+
+// Use transport with ProtocolEngine or ConnectedClient...
+transport.assert_request_count("/auth", 1);
+```
+
+## Simulation framework
+
+The `pulse-test-harness` crate includes a multi-tenant concurrent protocol simulation framework for load testing and correctness validation at scale.
+
+### Running simulations
+
+```sh
+# Quick smoke test: 1 tenant, 10 employees, concurrency 10
+cargo run -p pulse-test-harness --bin pulse-simulate
+
+# Stress test: 3 tenants, 500 employees each, concurrency 200
+cargo run -p pulse-test-harness --bin pulse-simulate -- --stress
+
+# Custom configuration
+cargo run -p pulse-test-harness --bin pulse-simulate -- \
+    --tenants 5 --employees 100 --concurrency 50
+```
+
+### What it does
+
+For each simulated tenant, the framework:
+
+1. Generates a blind-signature keypair and provisions in-memory storage
+2. Starts a pair of Identity + Signal zone servers on ephemeral ports
+3. Creates the configured number of simulated employees (each with a unique ID and persistent secret)
+4. Runs the full protocol flow for each employee concurrently, bounded by a semaphore
+
+Each employee flow exercises the complete protocol: authenticate, fetch questions, blind token, request signature, finalize token, encrypt response, submit anonymously.
+
+### What it reports
+
+Per-operation timing at p50/p90/p99/max, aggregated across all flows and broken down per tenant:
+
+```
+============================================================
+  Pulse Protocol Simulation Report
+============================================================
+
+  Total flows: 10  |  Passed: 10  |  Failed: 0
+  Wall-clock time: 312.36ms
+
+  Aggregate Timings (successful flows):
+    authenticate     p50=1.38ms   p90=1.52ms   p99=1.52ms   max=1.52ms
+    fetch_questions  p50=621.40us p90=680.67us p99=680.67us max=680.67us
+    blind_and_sign   p50=30.48ms  p90=35.81ms  p99=35.81ms  max=35.81ms
+    encrypt_submit   p50=2.05ms   p90=2.64ms   p99=2.64ms   max=2.64ms
+    total_flow       p50=35.02ms  p90=39.49ms  p99=39.49ms  max=39.49ms
+
+  Tenant 'Tenant-0': 10 flows (10 passed, 0 failed)
+    total_flow       p50=35.02ms  p90=39.49ms  p99=39.49ms  max=39.49ms
+```
+
+Failed flows include the step that failed and the error message. The binary exits with code 0 if all flows pass, 1 if any fail.
+
+### Programmatic use
+
+The simulation framework can also be used from Rust code for custom scenarios:
+
+```rust
+use pulse_test_harness::simulation::*;
+
+let config = SimulationConfig {
+    tenants: vec![TenantSetup {
+        name: "Acme Corp".into(),
+        employee_count: 100,
+        question_batches: vec![QuestionBatchSetup { /* ... */ }],
+        max_tokens_per_batch: 1,
+    }],
+    concurrency: 50,
+    with_analytics: true,
+};
+
+let cluster = SimulationCluster::start(&config).await;
+let runner = SimulationRunner::new(cluster, config.concurrency);
+let report = runner.run().await;
+assert_eq!(report.failed, 0);
+```

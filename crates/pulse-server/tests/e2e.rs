@@ -2,7 +2,7 @@
 //! across both Identity and Signal zones using the real route handlers,
 //! including analytics aggregation of response payloads.
 
-mod common;
+use pulse_test_harness::start_test_servers;
 
 use pulse_crypto::{aead, blind_sig};
 use pulse_protocol::epoch::EpochConfig;
@@ -19,7 +19,7 @@ use serde_json::Value;
 
 #[tokio::test]
 async fn full_http_flow() {
-    let servers = common::start_test_servers(true).await;
+    let servers = start_test_servers(true).await;
     let analytics_dek = servers.analytics_dek.unwrap();
     let client = reqwest::Client::new();
 
@@ -174,7 +174,7 @@ async fn full_http_flow() {
 
 #[tokio::test]
 async fn questions_include_segment_vector() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // Authenticate
@@ -212,7 +212,7 @@ async fn questions_include_segment_vector() {
 
 #[tokio::test]
 async fn sign_denied_frequency_cap() {
-    let servers = common::start_test_servers(false).await;
+    let servers = start_test_servers(false).await;
     let client = reqwest::Client::new();
 
     // Authenticate

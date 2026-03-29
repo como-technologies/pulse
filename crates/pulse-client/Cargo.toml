@@ -23,7 +23,5 @@ reqwest-transport = ["dep:reqwest"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["full"] }
-pulse-server = { path = "../pulse-server" }
-pulse-identity = { path = "../pulse-identity" }
-pulse-signal = { path = "../pulse-signal" }
-axum.workspace = true
+pulse-test-harness = { path = "../pulse-test-harness", features = ["reqwest-transport"] }
+pulse-crypto = { path = "../pulse-crypto" }

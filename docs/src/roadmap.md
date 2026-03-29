@@ -6,9 +6,9 @@ Each milestone represents a capability threshold — what a stakeholder can _do_
 
 ---
 
-## [M0: Protocol Proof](https://github.com/como-technologies/pulse/milestone/1)
+## [M0: Protocol Proof](https://github.com/como-technologies/pulse/milestone/1) -- CLOSED
 
-End-to-end demonstration over real HTTP. The protocol client library, a CLI test client, a WASM demo shell, and integration tests turn working server code into a working _system_.
+End-to-end demonstration over real HTTP. The protocol client library, test harness with multi-tenant simulation, and integration tests turn working server code into a working _system_.
 
 ## [M1: First Pilot](https://github.com/como-technologies/pulse/milestone/3)
 
