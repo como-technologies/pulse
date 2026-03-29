@@ -71,7 +71,7 @@ pub trait SamplingEngine: Send + Sync {
 
     /// Atomically authorize issuance AND record it.
     ///
-    /// Called by `POST /token/sign` (via [`TokenIssuer::sign_token`]).
+    /// Called by `POST /token/sign` (via `TokenIssuer::sign_token`).
     /// Checks: assignment exists, batch not expired, frequency cap not hit.
     /// On `Ok`, the issuance count is incremented. **The check and increment
     /// must be atomic** — a single lock or database transaction must cover

@@ -15,7 +15,7 @@ use crate::error::ApiError;
 /// session store in [`IdentityState`], and returns 401 if missing or invalid.
 ///
 /// This extractor only compiles against [`IdentityState`] — it cannot be
-/// accidentally used in signal-zone handlers backed by [`SignalState`].
+/// accidentally used in signal-zone handlers backed by [`SignalState`](crate::SignalState).
 pub struct AuthenticatedEmployee(pub EmployeeId);
 
 impl FromRequestParts<Arc<IdentityState>> for AuthenticatedEmployee {

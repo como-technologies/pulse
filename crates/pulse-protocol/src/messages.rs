@@ -47,7 +47,7 @@ pub struct QuestionDelivery {
     /// Unix timestamp when this batch expires.
     pub expiry: UnixTimestamp,
     /// Coarsened org segment identifiers for k-anonymity.
-    /// The client embeds these in [`TokenPayload::segment_vector`] before blinding.
+    /// The client embeds these in `TokenPayload::segment_vector` before blinding.
     pub segment_vector: Vec<SegmentLabel>,
 }
 

@@ -46,7 +46,7 @@ pub struct AuthResponse {
     pub session_token: String,
 }
 
-/// Authenticate a credential via the pluggable [`Authenticator`] and create a session.
+/// Authenticate a credential via the pluggable [`Authenticator`](pulse_identity::Authenticator) and create a session.
 pub async fn auth(
     State(state): State<Arc<IdentityState>>,
     Json(req): Json<AuthRequest>,

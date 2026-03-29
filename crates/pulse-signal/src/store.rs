@@ -29,7 +29,7 @@ pub struct StoredResponse {
 ///   responses.
 /// - [`list`](Self::list) returns responses in insertion order.
 /// - Database errors are catastrophic — use `.expect("...")` to crash the
-///   process (same convention as [`SpentTokenLedger`]).
+///   process (same convention as `SpentTokenLedger`).
 pub trait ResponseStore: Send + Sync {
     /// Append an encrypted response to the store. Never updates or deletes.
     fn store(&self, response: StoredResponse);
