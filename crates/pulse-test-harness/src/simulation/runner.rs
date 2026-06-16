@@ -2,6 +2,7 @@ use super::cluster::SimulationCluster;
 
 /// Salt so respondent sampling and cluster ID generation use distinct
 /// deterministic streams derived from the same user-facing seed.
+#[allow(dead_code)] // Read inside #[cfg(feature = "reqwest-transport")]
 const SAMPLING_SEED_SALT: u64 = 0x9E37_79B9_7F4A_7C15;
 
 /// Orchestrates concurrent protocol flows across all tenants.

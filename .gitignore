@@ -1,6 +1,5 @@
 /target
 /docs/book
-/docs/gruvbox
 /out
 .claude/settings.local.json
 # Suite resolver cache (cargo install --git ... --root .como/tools);
