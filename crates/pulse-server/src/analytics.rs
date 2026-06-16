@@ -18,7 +18,7 @@ pub enum AnalyticsError {
 }
 
 /// Aggregated results for a question batch.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BatchAggregation {
     pub question_batch_id: QuestionBatchId,
     pub tenant_id: TenantId,
@@ -29,7 +29,7 @@ pub struct BatchAggregation {
 }
 
 /// Aggregated results for a single segment within a batch.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SegmentAggregation {
     pub segment_label: SegmentLabel,
     pub response_count: usize,
@@ -353,6 +353,31 @@ mod tests {
         let engine = AnalyticsEngine::new(store, dek_store, cmk, 2);
         let result = engine.aggregate_batch(&QuestionBatchId::new(), &tenant_id);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn batch_aggregation_round_trips_through_json() {
+        let aggregation = BatchAggregation {
+            question_batch_id: QuestionBatchId::new(),
+            tenant_id: TenantId::new(),
+            total_responses: 3,
+            total_decrypted: 3,
+            total_failed: 0,
+            segments: vec![SegmentAggregation {
+                segment_label: SegmentLabel::from("company"),
+                response_count: 3,
+                unique_pseudonyms: 3,
+                average_score: Some(4.0),
+                suppressed: false,
+            }],
+        };
+
+        let json = serde_json::to_string(&aggregation).unwrap();
+        let recovered: BatchAggregation = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered.question_batch_id, aggregation.question_batch_id);
+        assert_eq!(recovered.total_responses, 3);
+        assert_eq!(recovered.segments[0].average_score, Some(4.0));
+        assert!(!recovered.segments[0].suppressed);
     }
 
     #[test]

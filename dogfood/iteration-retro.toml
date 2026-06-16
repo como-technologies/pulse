@@ -1,0 +1,48 @@
+# Iteration retro pulse — the dogfood Measure survey.
+#
+# Surveys simulated respondents about the portfolio dogfood iteration itself.
+# Answers are sampled from the seeded per-question weight distributions below
+# (`weights` are relative weights for Scale5 scores 1..=5); nothing here is
+# real survey data. Edit this file each iteration — no recompile needed:
+#
+#   just dogfood
+#
+# M-p6 steady state: fold one new retro question about the current iteration
+# into this file each portfolio iteration.
+
+name = "iteration-retro"
+
+[[questions]]
+text = "How confident are you that this iteration's changes improved the portfolio?"
+response_type = "scale5"
+segments = ["company"]
+weights = [0, 1, 2, 4, 3]
+
+[[questions]]
+text = "How well did the dogfood loop (prescribe, adopt, measure, assess) support the work this iteration?"
+response_type = "scale5"
+segments = ["company"]
+weights = [1, 2, 4, 2, 1]
+
+[[questions]]
+text = "How sustainable is the current iteration pace?"
+response_type = "scale5"
+segments = ["company"]
+weights = [0, 2, 5, 2, 1]
+
+# Iteration-2 fold (M-p6): the loop's output landed in real corpora this
+# iteration instead of throwaway run directories.
+[[questions]]
+text = "How much do you trust the artifacts the loop produced this iteration (assessments, seeded decisions, merged PRs)?"
+response_type = "scale5"
+segments = ["company"]
+weights = [0, 1, 3, 4, 2]
+
+# Iteration-3 fold (M-p6): iteration 3 was hardening — the quality gates were
+# proven under adversarial fault injection (and fired for real in run-3),
+# forge-neutrality reached N=3, and Measure gained multi-month reporting.
+[[questions]]
+text = "How much did this iteration's hardening (gates tested under attack, broader forge support) increase your confidence in the suite?"
+response_type = "scale5"
+segments = ["company"]
+weights = [0, 1, 2, 4, 3]

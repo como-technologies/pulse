@@ -1,11 +1,15 @@
 use pulse_protocol::messages::ResponseType;
 use pulse_protocol::{QuestionText, SegmentLabel};
 
+use super::survey::ResponseDistribution;
+
 /// Configuration for a question batch in the simulation.
 pub struct QuestionBatchSetup {
     pub question_text: QuestionText,
     pub response_type: ResponseType,
     pub segment_labels: Vec<SegmentLabel>,
+    /// How simulated respondents answer this question.
+    pub distribution: ResponseDistribution,
 }
 
 /// Configuration for a simulated tenant (company).
@@ -23,4 +27,10 @@ pub struct SimulationConfig {
     pub concurrency: usize,
     /// Provision analytics infrastructure for post-run verification.
     pub with_analytics: bool,
+    /// k-anonymity threshold for the analytics engine: segments with fewer
+    /// unique pseudonyms are suppressed.
+    pub k_threshold: usize,
+    /// Seed for deterministic runs: drives tenant/batch IDs and respondent
+    /// answer sampling. `None` means fresh OS entropy.
+    pub seed: Option<u64>,
 }

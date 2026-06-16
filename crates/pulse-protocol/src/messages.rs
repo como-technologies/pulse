@@ -51,7 +51,7 @@ pub struct QuestionDelivery {
     pub segment_vector: Vec<SegmentLabel>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResponseType {
     Scale5,
     Binary,
@@ -103,7 +103,7 @@ pub enum RejectReason {
 // ── Response Payload (cleartext inner structure of encrypted blob) ──
 
 /// Typed response data matching the question's response type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ResponseData {
     Scale5(u8),
     Binary(bool),
