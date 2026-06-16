@@ -11,11 +11,13 @@ Pulse uses blind signatures (RSA, RFC 9474) to mathematically prove that no one 
 cargo run -p pulse-server
 
 # Run the protocol simulation (10 employees, full blind signature flow)
-cargo run -p pulse-test-harness --bin pulse-simulate
+cargo run -p pulse-test-harness --features reqwest-transport --bin pulse-simulate
 
 # Run all tests
 cargo test --workspace
 ```
+
+With [just](https://github.com/casey/just) installed, the justfile is the single entry point: `just ci` runs the full local gate (format check, clippy, tests, book build, ADR validation); `just simulate` runs the protocol simulation; `just dogfood` writes the deterministic Measure report (`out/pulse-report.json`, seeded simulated respondents -- see the book's "Dogfood: The Measure Report" page); `just --list` shows everything.
 
 ## Documentation
 

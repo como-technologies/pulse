@@ -28,7 +28,7 @@ No running server required. Read the output to build intuition about how the pro
 Start the server with default dev providers:
 
 ```sh
-cargo run
+cargo run -p pulse-server
 ```
 
 The dev configuration uses:
@@ -221,17 +221,27 @@ The `pulse-test-harness` crate includes a multi-tenant concurrent protocol simul
 
 ### Running simulations
 
+The `pulse-simulate` binary requires the `reqwest-transport` feature (it drives real HTTP against the in-process cluster):
+
 ```sh
 # Quick smoke test: 1 tenant, 10 employees, concurrency 10
-cargo run -p pulse-test-harness --bin pulse-simulate
+cargo run -p pulse-test-harness --features reqwest-transport --bin pulse-simulate
 
 # Stress test: 3 tenants, 500 employees each, concurrency 200
-cargo run -p pulse-test-harness --bin pulse-simulate -- --stress
+cargo run -p pulse-test-harness --features reqwest-transport --bin pulse-simulate -- --stress
 
 # Custom configuration
-cargo run -p pulse-test-harness --bin pulse-simulate -- \
+cargo run -p pulse-test-harness --features reqwest-transport --bin pulse-simulate -- \
     --tenants 5 --employees 100 --concurrency 50
 ```
+
+Or, with [just](https://github.com/casey/just) installed: `just simulate`, `just simulate --stress`, etc.
+
+Further flags: `--json` prints the machine-readable report to stdout, `--out <path>` writes it
+to a file, `--batch-file <toml>` loads a survey definition, `--seed <u64>` makes the run
+deterministic, and `--k-threshold <n>` sets the analytics suppression threshold. See
+[Dogfood: The Measure Report](dogfood.md) for the report schema and the deterministic
+`just dogfood` run.
 
 ### What it does
 
@@ -242,7 +252,7 @@ For each simulated tenant, the framework:
 3. Creates the configured number of simulated employees (each with a unique ID and persistent secret)
 4. Runs the full protocol flow for each employee concurrently, bounded by a semaphore
 
-Each employee flow exercises the complete protocol: authenticate, fetch questions, blind token, request signature, finalize token, encrypt response, submit anonymously.
+Each employee flow exercises the complete protocol: authenticate, fetch questions, then for every assigned question batch — blind token, request signature, finalize token, encrypt response, submit anonymously. After the run, the framework fetches each batch's k-anonymous aggregation from `/analytics/batch/{id}` and embeds it in the report.
 
 ### What it reports
 

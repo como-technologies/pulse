@@ -1,4 +1,8 @@
 /target
 /docs/book
 /docs/gruvbox
+/out
 .claude/settings.local.json
+# Suite resolver cache (cargo install --git ... --root .como/tools);
+# never committed, never a remote of this repo
+/.como/

@@ -24,4 +24,5 @@
   - [Anonymizing Relay](development/relay.md)
   - [Error Handling and Tracing](development/error-handling-and-tracing.md)
   - [Testing & Simulation](development/verification.md)
+  - [Dogfood: The Measure Report](development/dogfood.md)
   - [API Reference](development/api-reference.md)

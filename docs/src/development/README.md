@@ -117,3 +117,16 @@ pulse-test-harness (dev/test only)
 | Encryption           | AES-256-GCM       | Two-tier envelope: tenant CMK + Pulse-generated DEKs                   |
 | Storage              | SQLite (current)  | Behind traits; production backends via adapter pattern                 |
 | Property testing     | Proptest          | Cryptographic operations verified for arbitrary inputs                 |
+
+## Architecture Decision Records
+
+The load-bearing decisions behind this architecture are recorded as ADRs in the
+`adr/` directory at the repository root, managed with
+[adroit](https://github.com/como-technologies/adroit) (browse with
+`adroit list --dir adr`, validate with `adroit check --dir adr`). The accepted
+set covers trust-zone isolation via the Cargo graph, the composition-root state
+split, the postcard wire format, the `Sensitive`/newtype redaction convention,
+k-anonymity threshold enforcement, CMK/DEK envelope encryption with
+crypto-shredding, and the decision to park product development at M0 for the
+portfolio dogfood. Corpus validation runs as part of the local gate
+(`just ci`, via the `adr-check` recipe).
