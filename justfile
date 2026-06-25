@@ -114,7 +114,7 @@ adr-check:
     set -euo pipefail
     adroit="$(just _adroit-resolve)"
     if [ -n "$adroit" ] && [ -x "$adroit" ]; then
-        "$adroit" check --dir docs/adr
+        "$adroit" check --dir docs/src/adr
     else
         echo "skip: no adroit binary (set ADROIT_BIN, build ../adroit, install adroit on PATH, or set COMO_GIT_BASE for the .como/tools install)"
     fi
