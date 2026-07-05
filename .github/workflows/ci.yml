@@ -5,13 +5,25 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # Weekly dependency-advisory sweep (Mondays 06:00 UTC): new RUSTSEC
+    # advisories — and the ADR-0012 removal trigger — land without a code
+    # change, so the audit job must run without waiting for a push.
+    - cron: "0 6 * * 1"
 
 env:
   CARGO_TERM_COLOR: always
 
+# Least privilege: CI only reads the repo (fmt/lint/test/audit, no
+# publishing). Applies to every job that doesn't set its own.
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check, Lint, Test
+    # The weekly cron is the advisory sweep only — code hasn't changed.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -30,3 +42,18 @@ jobs:
 
       - name: Tests
         run: cargo test
+
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-audit
+
+      - name: Audit
+        run: just crate-audit

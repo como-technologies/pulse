@@ -2,15 +2,17 @@
 default:
     @just --list
 
-# Install project tools (clippy, rustfmt, mdbook + gruvbox theme)
+# Install project tools (clippy, rustfmt, mdbook + gruvbox theme, cargo-edit,
+# cargo-audit)
 init:
     rustup component add clippy rustfmt
-    cargo install mdbook mdbook-gruvbox
+    cargo install mdbook mdbook-gruvbox cargo-edit cargo-audit
     mdbook-gruvbox install docs
 
-# Run all CI checks: the CLAUDE.md pre-push checklist + book + ADR validation.
-# This local gate is the source of truth (nothing is pushed in park mode).
-ci: fmt-check lint test book adr-check
+# Run all CI checks: the CLAUDE.md pre-push checklist + book + ADR validation
+# + dependency audit. This local gate is the source of truth (nothing is
+# pushed in park mode).
+ci: fmt-check lint test book adr-check crate-audit
 
 # House vocabulary for the full local gate
 alias gate := ci
@@ -128,6 +130,23 @@ book:
 # Serve the book locally with live reload
 book-serve:
     mdbook serve docs --open
+
+# Upgrade dependencies (including incompatible versions)
+crate-upgrade:
+    cargo upgrade --incompatible
+
+# Update Cargo.lock to latest compatible versions
+crate-update:
+    cargo update
+
+# Audit dependencies for known vulnerabilities, honoring the accepted-advisory
+# list in .cargo/audit.toml (skipped if cargo-audit isn't installed; `just
+# init` installs it and GitHub CI always runs it)
+crate-audit:
+    @if command -v cargo-audit >/dev/null 2>&1; then cargo audit; else echo "skip: cargo-audit not installed (run 'just init')"; fi
+
+# Upgrade deps, update lockfile, audit, and test
+crate-refresh: crate-upgrade crate-update crate-audit test
 
 # Clean build artifacts
 clean:
