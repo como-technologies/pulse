@@ -1,0 +1,19 @@
+# cargo-audit configuration (honored by `just crate-audit` locally and in CI).
+
+[advisories]
+# RUSTSEC-2023-0071 — rsa: Marvin Attack, potential key recovery through
+# timing side-channels. Accepted 2026-07-04; decision recorded in
+# docs/src/adr/proposed/0012-accept-the-rsa-marvin-timing-side-channel-advisory.md.
+#
+# Why accepted rather than fixed:
+# - Structural: the RFC 9474 blind-signature core (blind-rsa-signatures ->
+#   rsa 0.10-rc) and pulse-crypto's direct rsa 0.9 line both sit on the
+#   RustCrypto `rsa` crate; the advisory has NO fixed upstream release, so
+#   the one ignore entry covers both versions in the lockfile.
+# - Threat model: exploiting Marvin requires an attacker who can drive the
+#   signer with chosen inputs AND measure a per-operation timing oracle
+#   against it. Pulse's signer runs server-side in the Identity zone behind
+#   HTTP; parked at M0 nothing is deployed, so no such oracle is exposed.
+# - Removal trigger: an rsa release that fixes RUSTSEC-2023-0071 ships ->
+#   delete this entry, `cargo update`, and confirm `cargo audit` is clean.
+ignore = ["RUSTSEC-2023-0071"]
