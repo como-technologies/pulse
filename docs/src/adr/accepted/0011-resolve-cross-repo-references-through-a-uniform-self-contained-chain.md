@@ -10,7 +10,7 @@ Accepted
 
 Como Technologies owner (suite maintainer); maintainers of every TAPS repo
 that consumes a sibling (assessments, adroit, conduit, tuesday, pulse,
-playbook, portfolio, general-business, docs).
+portfolio, general-business, docs).
 
 ## Context and Problem Statement
 
@@ -20,7 +20,7 @@ and then fell back to a hardcoded `../adroit/target/debug/adroit`. That
 breaks every single-repo clone, hides which binary a gate actually ran,
 and behaves differently per repo (some PATH-first, some sibling-only).
 Meanwhile some suite repos have no public remote at all (conduit,
-playbook; docs is local-only by explicit policy) and adroit's public
+docs is local-only by explicit policy) and adroit's public
 remote currently lags the local checkout — so any remote-based resolution
 must verify what it fetched and degrade cleanly rather than assume the
 network has what the workspace has.
@@ -73,7 +73,7 @@ fallbacks — and the docs evidence repo is local-only by policy, so
 references to it stop at skip-with-notice. Resolvers only clone and fetch:
 they never push, never add the cache as a remote, and never carry
 credentials in URLs. Repos without a public remote today (conduit,
-playbook, docs) degrade to exactly the skip-with-notice behavior they
+docs) degrade to exactly the skip-with-notice behavior they
 produce now, so nothing breaks before the owner pushes them.
 
 ### Positive Consequences
