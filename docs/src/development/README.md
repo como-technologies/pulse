@@ -120,10 +120,12 @@ pulse-test-harness (dev/test only)
 
 ## Architecture Decision Records
 
-The load-bearing decisions behind this architecture are recorded as ADRs in the
-`adr/` directory at the repository root, managed with
-[adroit](https://github.com/como-technologies/adroit) (browse with
-`adroit list --dir adr`, validate with `adroit check --dir adr`). The accepted
+The load-bearing decisions behind this architecture are recorded as ADRs in
+the committed `docs/src/adr/` corpus, managed with
+[adroit](https://github.com/como-technologies/adroit). adroit is KB-only
+(adroit ADR-0020): the gate seeds the corpus into an ephemeral KB space and
+validates it there (browse one with `adroit seed --from docs/src/adr --dir
+<fresh-space>` then `adroit list --dir <fresh-space>`). The accepted
 set covers trust-zone isolation via the Cargo graph, the composition-root state
 split, the postcard wire format, the `Sensitive`/newtype redaction convention,
 k-anonymity threshold enforcement, CMK/DEK envelope encryption with

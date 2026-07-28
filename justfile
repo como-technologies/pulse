@@ -71,8 +71,6 @@ dogfood:
 # Optional tag pin for the resolver's cached-install leg (always --locked).
 # If the remote doesn't have the tag yet, the install fails and the chain
 # degrades to the skip notice — it never installs an unpinned build.
-adroit_pin := "v0.2.0"
-
 # Resolve the adroit binary per the suite convention (ADR-0011):
 # ADROIT_BIN → sibling checkout (${COMO_ADROIT_DIR:-../adroit}, release
 # preferred over debug) → adroit on PATH → cached `cargo install --git`
@@ -101,12 +99,12 @@ _adroit-resolve:
         exit 0
     fi
     url="${COMO_ADROIT_GIT:-${COMO_GIT_BASE:-https://github.com/como-technologies}/adroit.git}"
-    echo "adroit resolver: installing adroit from $url (tag {{adroit_pin}}) into .como/tools ..." >&2
-    if cargo install --git "$url" --tag "{{adroit_pin}}" --locked --root "$root/.como/tools" adroit 1>&2 \
+    echo "adroit resolver: installing adroit from $url (HEAD of main) into .como/tools ..." >&2
+    if cargo install --git "$url" --locked --root "$root/.como/tools" adroit 1>&2 \
         && [ -x "$cached" ]; then
         echo "$cached"; exit 0
     fi
-    echo "adroit resolver: install from $url failed — the remote may not have tag {{adroit_pin}} yet (set ADROIT_BIN, build ../adroit, or set COMO_GIT_BASE / check network)" >&2
+    echo "adroit resolver: install from $url failed — set ADROIT_BIN, build ../adroit, or set COMO_GIT_BASE / check network)" >&2
 
 # Validate the ADR corpus with adroit (resolved per the suite chain).
 # Advisory gate: skips gracefully — with the knobs named — if no binary
@@ -116,7 +114,14 @@ adr-check:
     set -euo pipefail
     adroit="$(just _adroit-resolve)"
     if [ -n "$adroit" ] && [ -x "$adroit" ]; then
-        "$adroit" check --dir docs/src/adr
+        # KB-only adroit (adroit ADR-0020): the gate seeds the committed
+        # corpus into an ephemeral space and validates it there.
+        tmp="$(mktemp -d)"
+        trap 'rm -rf "$tmp"' EXIT
+        printf 'name = "adrs"\n' > "$tmp/wiki.toml"
+        mkdir -p "$tmp/wiki/decisions"
+        "$adroit" seed --from docs/src/adr --dir "$tmp"
+        "$adroit" check --dir "$tmp"
     else
         echo "skip: no adroit binary (set ADROIT_BIN, build ../adroit, install adroit on PATH, or set COMO_GIT_BASE for the .como/tools install)"
     fi
